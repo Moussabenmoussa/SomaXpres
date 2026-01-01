@@ -1,73 +1,58 @@
-from flask import Blueprint, render_template, request, jsonify
-from app.services.db import get_collection
-from app.services.utils import TEMP_MEMORY
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from app import db
+import datetime
 
-bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
+dashboard_bp = Blueprint('dashboard', __name__)
 
-@bp.route('/')
+# ملاحظة: في النسخة النهائية سنضيف @login_required هنا
+# للتأكد من أن المستخدم مسجل دخول
+
+@dashboard_bp.route('/')
 def index():
-    return render_template('dashboard.html')
+    """الصفحة الرئيسية للوحة التحكم (الإحصائيات)"""
+    # هنا نجلب الإحصائيات الحقيقية من الـ DB
+    return render_template('dashboard/index.html')
 
-# --- إدارة المنتجات (الجديد) ---
-@bp.route('/api/add-product', methods=['POST'])
+@dashboard_bp.route('/products/new', methods=['GET', 'POST'])
 def add_product():
-    data = request.json
-    products_col = get_collection('products')
+    """صفحة إضافة منتج جديد + إعدادات الذكاء"""
     
-    if products_col is not None:
+    if request.method == 'POST':
+        # 1. جمع البيانات الأساسية
+        name = request.form.get('name')
+        price = float(request.form.get('price'))
+        currency = request.form.get('currency', '$') # العملة الافتراضية
+        description = request.form.get('description')
+        product_type = request.form.get('product_type') # physical or digital
+        
+        # 2. جمع صور المنتج (روابط مؤقتاً)
+        # في النسخة المتقدمة سنستخدم رفع الملفات (File Upload)
+        image_url = request.form.get('image_url')
+        
+        # 3. إعدادات "عقل الروبوت"
+        bot_name = request.form.get('bot_name')
+        ai_instructions = request.form.get('ai_instructions')
+        
+        # 4. بناء كائن المنتج (Document)
         new_product = {
-            "merchant_id": "demo_merchant_id",
-            "name": data.get('name'),
-            "price": data.get('price'),
-            "image": data.get('image') or "https://placehold.co/600x400?text=No+Image",
-            # هنا نحفظ الدماغ الخاص بالمنتج
-            "ai_instructions": data.get('ai_instructions', ''), 
+            "merchant_id": session.get('user_id', 'admin_1'), # ربط بالتاجر
+            "name": name,
+            "price": price,
+            "currency_symbol": currency,
+            "description": description,
+            "product_type": product_type,
+            "images": [image_url] if image_url else [],
+            "bot_name": bot_name,
+            "ai_instructions": ai_instructions,
+            "created_at": datetime.datetime.utcnow(),
             "views": 0,
             "orders_count": 0
         }
-        result = products_col.insert_one(new_product)
-        return jsonify({"success": True, "product_id": str(result.inserted_id)})
-    
-    # في حالة عدم وجود قاعدة بيانات، نستخدم الذاكرة المؤقتة (للتجربة فقط)
-    # (هذا الجزء احتياطي لكي لا يتوقف السيرفر)
-    import uuid
-    fake_id = str(uuid.uuid4())
-    TEMP_MEMORY[f"prod_{fake_id}"] = data
-    return jsonify({"success": True, "product_id": f"temp_{fake_id}"})
+        
+        # 5. الحفظ في MongoDB
+        db.products.insert_one(new_product)
+        
+        flash('تم نشر المنتج وتدريب الروبوت بنجاح!', 'success')
+        return redirect(url_for('dashboard.index'))
 
-
-# --- إدارة المفاتيح (القديم - ضروري) ---
-@bp.route('/api/save-keys', methods=['POST'])
-def save_keys():
-    data = request.json
-    # الحفظ في الذاكرة المؤقتة أولاً (للأمان)
-    TEMP_MEMORY['groq_key'] = data.get('groq_key')
-    TEMP_MEMORY['gemini_key'] = data.get('gemini_key')
-
-    # الحفظ في قاعدة البيانات
-    users_col = get_collection('users')
-    if users_col is not None:
-        try:
-            users_col.update_one(
-                {"_id": "demo_merchant_id"},
-                {"$set": { "api_keys": data }},
-                upsert=True
-            )
-        except: pass
-    return jsonify({"success": True})
-
-@bp.route('/api/get-keys', methods=['GET'])
-def get_keys():
-    # محاولة من الذاكرة
-    keys = {
-        "groq_key": TEMP_MEMORY.get('groq_key', ''),
-        "gemini_key": TEMP_MEMORY.get('gemini_key', '')
-    }
-    # محاولة من قاعدة البيانات
-    if not keys['groq_key']:
-        users_col = get_collection('users')
-        if users_col is not None:
-            merchant = users_col.find_one({"_id": "demo_merchant_id"}, {"api_keys": 1})
-            if merchant: keys = merchant.get("api_keys", keys)
-            
-    return jsonify(keys)
+    return render_template('dashboard/add_product.html')
