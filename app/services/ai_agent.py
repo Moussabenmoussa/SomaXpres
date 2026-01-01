@@ -6,8 +6,8 @@ from groq import Groq
 
 # ---------------------------------------------------------
 # 👇 ضع مفاتيحك هنا
-MY_GROQ_KEY = "gsk_..." 
-MY_GEMINI_KEY = "AIzaSy..."
+MY_GROQ_KEY = "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" 
+MY_GEMINI_KEY = "AIzaSyCKKXguNfvGNCEaoC6oQF0mu05UEXtPI9M"
 # ---------------------------------------------------------
 
 PERSONAS = {
