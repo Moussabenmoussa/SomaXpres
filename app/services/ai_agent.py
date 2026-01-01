@@ -4,6 +4,12 @@ import base64
 import struct
 from groq import Groq
 
+# ---------------------------------------------------------
+# 👇 ضع مفاتيحك هنا مباشرة لتجنب أي مشاكل
+MY_GROQ_KEY = "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" 
+MY_GEMINI_KEY = "AIzaSyCKKXguNfvGNCEaoC6oQF0mu05UEXtPI9M"
+# ---------------------------------------------------------
+
 PERSONAS = {
     "amine": { "name": "أمين", "voice_id": "Puck", "style": "شاب جزائري عفوي." },
     "sarah": { "name": "سارة", "voice_id": "Leda", "style": "فتاة لطيفة وجذابة." },
@@ -11,16 +17,20 @@ PERSONAS = {
 }
 
 class AIAgent:
-    def __init__(self, groq_key, gemini_key):
-        if groq_key:
-            self.groq_client = Groq(api_key=groq_key)
+    def __init__(self, groq_key=None, gemini_key=None):
+        # نستخدم المفاتيح المكتوبة يدوياً للأمان
+        self.groq_key = MY_GROQ_KEY
+        self.gemini_key = MY_GEMINI_KEY
+        
+        if self.groq_key and "gsk_" in self.groq_key:
+            self.groq_client = Groq(api_key=self.groq_key)
         else:
             self.groq_client = None
-        self.gemini_key = gemini_key
+            print("❌ خطأ: مفتاح Groq مفقود أو غير صحيح.")
 
     def think_and_speak(self, user_input, history, product_context, merchant_rules, persona="amine", input_type="text"):
         if not self.groq_client:
-            return { "text": "يرجى وضع مفتاح Groq API في لوحة التحكم.", "audio": None }
+            return { "text": "يا شريكي، تأكد من مفتاح Groq في الكود!", "audio": None }
 
         selected_persona = PERSONAS.get(persona, PERSONAS["amine"])
         
@@ -29,7 +39,7 @@ class AIAgent:
         الأسلوب: {selected_persona['style']}
         المنتج: {product_context}
         القوانين: {merchant_rules}
-        كن مختصراً جداً (أقصى حد 20 كلمة).
+        رد بلهجة جزائرية مفهومة. كن مختصراً جداً (أقل من 20 كلمة).
         """
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -41,24 +51,27 @@ class AIAgent:
             completion = self.groq_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
-                max_tokens=60,
+                max_tokens=70,
                 temperature=0.6
             )
             ai_text = completion.choices[0].message.content
 
-            # 2. التحدث (Gemini)
+            # 2. التحدث (Gemini) - فقط إذا كان الطلب صوتياً
             audio_b64 = None
             if input_type == "voice" and self.gemini_key:
+                # جلب البيانات الخام
                 raw_audio = self.generate_audio_raw(ai_text, selected_persona['voice_id'])
                 if raw_audio:
-                    # تحويل البيانات الخام إلى ملف WAV قابل للتشغيل
+                    # ✅ الخطوة الحاسمة: تحويل الخام إلى WAV
                     audio_b64 = self.add_wav_header(raw_audio)
+                else:
+                    print("⚠️ تحذير: فشل توليد الصوت من Gemini")
 
             return { "text": ai_text, "audio": audio_b64 }
 
         except Exception as e:
-            print(f"AI Error: {e}")
-            return {"text": "سمحلي، حدث خطأ بسيط.", "audio": None}
+            print(f"❌ خطأ عام في الذكاء الاصطناعي: {e}")
+            return {"text": "سمحلي، كاين خلل تقني بسيط.", "audio": None}
 
     def generate_audio_raw(self, text, voice_name):
         """جلب البيانات الصوتية الخام من Gemini"""
@@ -77,10 +90,10 @@ class AIAgent:
                 b64_data = response.json()['candidates'][0]['content']['parts'][0]['inlineData']['data']
                 return base64.b64decode(b64_data)
             else:
-                print(f"Gemini API Error: {response.text}")
+                print(f"❌ خطأ Gemini API: {response.text}")
                 return None
         except Exception as e:
-            print(f"Request Error: {e}")
+            print(f"❌ خطأ اتصال بـ Gemini: {e}")
             return None
 
     def add_wav_header(self, pcm_data, sample_rate=24000):
