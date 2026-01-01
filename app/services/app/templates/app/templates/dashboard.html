@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SomaXpres - لوحة التحكم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>body { font-family: 'Cairo', sans-serif; background: #f1f5f9; }</style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+    <aside class="w-64 bg-slate-900 text-slate-300 hidden md:flex flex-col">
+        <div class="p-6 text-center border-b border-slate-800">
+            <h1 class="text-2xl font-bold text-white tracking-wider">Soma<span class="text-rose-500">AI</span></h1>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="#" class="flex items-center gap-3 p-3 bg-rose-600 text-white rounded-xl shadow-lg shadow-rose-900/20">
+                <i class="fas fa-chart-pie w-6"></i> الرئيسية
+            </a>
+            <a href="#" class="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition">
+                <i class="fas fa-robot w-6"></i> إعداد الروبوت
+            </a>
+            <a href="#" class="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition">
+                <i class="fas fa-box w-6"></i> الطلبات
+            </a>
+            <a href="#" class="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition">
+                <i class="fas fa-key w-6"></i> المفاتيح (API)
+            </a>
+        </nav>
+        <div class="p-4 border-t border-slate-800">
+            <div class="bg-slate-800 p-4 rounded-xl">
+                <p class="text-xs text-slate-400 mb-1">الرصيد المتبقي</p>
+                <div class="flex justify-between items-end">
+                    <span class="text-xl font-bold text-white">42 نقطة</span>
+                    <button class="text-xs bg-rose-500 text-white px-2 py-1 rounded hover:bg-rose-600">شحن +</button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 overflow-y-auto">
+        <header class="bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-10">
+            <h2 class="text-lg font-bold text-slate-800">👋 مرحباً، متجر الأناقة</h2>
+            <div class="flex items-center gap-4">
+                <button class="w-10 h-10 bg-slate-100 rounded-full text-slate-600 hover:bg-slate-200"><i class="fas fa-bell"></i></button>
+                <img src="https://ui-avatars.com/api/?name=Shop&background=0f172a&color=fff" class="w-10 h-10 rounded-full border-2 border-slate-200">
+            </div>
+        </header>
+
+        <div class="p-6 max-w-6xl mx-auto space-y-6">
+            
+            <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <i class="fas fa-users-gear text-rose-500"></i> اختر الموظف الافتراضي
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <label class="cursor-pointer relative">
+                        <input type="radio" name="persona" class="peer sr-only" checked>
+                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-rose-500 peer-checked:bg-rose-50 transition text-center">
+                            <img src="https://ui-avatars.com/api/?name=Amine&background=e11d48&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
+                            <h4 class="font-bold text-slate-800">أمين (الشاب)</h4>
+                            <p class="text-xs text-slate-500 mt-1">عفوي، مباشر، شعبي</p>
+                            <button class="mt-3 text-xs text-rose-600 font-bold"><i class="fas fa-play"></i> تجربة الصوت</button>
+                        </div>
+                        <div class="absolute top-4 right-4 text-rose-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
+                    </label>
+
+                    <label class="cursor-pointer relative">
+                        <input type="radio" name="persona" class="peer sr-only">
+                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-pink-500 peer-checked:bg-pink-50 transition text-center">
+                            <img src="https://ui-avatars.com/api/?name=Sarah&background=ec4899&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
+                            <h4 class="font-bold text-slate-800">سارة (اللطيفة)</h4>
+                            <p class="text-xs text-slate-500 mt-1">جذابة، حنونة، مقنعة</p>
+                            <button class="mt-3 text-xs text-pink-600 font-bold"><i class="fas fa-play"></i> تجربة الصوت</button>
+                        </div>
+                        <div class="absolute top-4 right-4 text-pink-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
+                    </label>
+                    
+                    <label class="cursor-pointer relative">
+                        <input type="radio" name="persona" class="peer sr-only">
+                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-blue-500 peer-checked:bg-blue-50 transition text-center">
+                            <img src="https://ui-avatars.com/api/?name=Nadir&background=3b82f6&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
+                            <h4 class="font-bold text-slate-800">نذير (الرسمي)</h4>
+                            <p class="text-xs text-slate-500 mt-1">جاد، محترم، وثائقي</p>
+                            <button class="mt-3 text-xs text-blue-600 font-bold"><i class="fas fa-play"></i> تجربة الصوت</button>
+                        </div>
+                        <div class="absolute top-4 right-4 text-blue-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
+                    </label>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <i class="fas fa-key text-amber-500"></i> مفاتيح التشغيل (API Keys)
+                </h3>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 flex gap-3 items-start">
+                    <i class="fas fa-lightbulb text-amber-500 mt-1"></i>
+                    <div>
+                        <p class="text-sm text-amber-800 font-bold">وفر المال واحصل على رصيد لا نهائي!</p>
+                        <p class="text-xs text-amber-700 mt-1">يمكنك استخدام مفاتيحك الخاصة من Groq و Google مجاناً. <a href="#" class="underline">شاهد الشرح (فيديو)</a></p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Groq API Key (للعقل)</label>
+                        <input type="password" placeholder="gsk_xxxxxxxx..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Gemini API Key (للصوت)</label>
+                        <input type="password" placeholder="AIzaSy..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none">
+                    </div>
+                    <button class="bg-slate-800 text-white px-6 py-2 rounded-xl hover:bg-slate-900 transition">حفظ المفاتيح</button>
+                </div>
+            </section>
+
+        </div>
+    </main>
+</body>
+</html>
