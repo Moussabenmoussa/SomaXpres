@@ -1,8 +1,7 @@
-flask
+Flask
 pymongo
 groq
 python-dotenv
 gunicorn
-requests
-flask-cors
 dnspython
+requests
