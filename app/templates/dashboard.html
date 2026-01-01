@@ -107,7 +107,6 @@
     </main>
 
     <script>
-        // دالة تعمل تلقائياً عند فتح الصفحة لجلب المفاتيح
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const res = await fetch('/dashboard/api/get-keys');
@@ -117,7 +116,7 @@
                     if(data.gemini_key) document.getElementById('geminiKey').value = data.gemini_key;
                 }
             } catch (err) {
-                console.error("فشل جلب المفاتيح", err);
+                console.error(err);
             }
         });
 
@@ -138,11 +137,9 @@
                 if(res.ok) {
                     document.getElementById('saveMsg').classList.remove('hidden');
                     setTimeout(() => document.getElementById('saveMsg').classList.add('hidden'), 3000);
-                } else {
-                    alert("حدث خطأ! تأكد أن قاعدة البيانات متصلة.");
                 }
             } catch (e) {
-                alert("خطأ: " + e);
+                alert("خطأ في الاتصال");
             } finally {
                 btn.innerText = "حفظ المفاتيح";
             }
