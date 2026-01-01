@@ -165,57 +165,111 @@
     <audio id="audioPlayer" class="hidden"></audio>
 
     <script>
-        // === UI LOGIC ===
-        function openGateway() {
-            const popup = document.getElementById('gatewayPopup');
-            const content = document.getElementById('gatewayContent');
-            popup.classList.remove('hidden');
-            setTimeout(() => {
-                popup.classList.remove('opacity-0');
-                content.classList.remove('translate-y-full');
-            }, 10);
+        let conversationHistory = [];
+        let isRecording = false;
+        let recognition = null;
+
+        // === 1. إعداد التعرف على الصوت (Web Speech API) ===
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'ar-DZ'; // اللهجة الجزائرية
+            
+            recognition.onstart = function() {
+                isRecording = true;
+                document.getElementById('statusText').innerText = "جاري الاستماع...";
+                document.getElementById('waveAnimation').classList.remove('opacity-0');
+                document.getElementById('micBtn').classList.add('animate-pulse');
+            };
+
+            recognition.onend = function() {
+                isRecording = false;
+                document.getElementById('statusText').innerText = "جاري المعالجة...";
+                document.getElementById('waveAnimation').classList.add('opacity-0');
+                document.getElementById('micBtn').classList.remove('animate-pulse');
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                addMessage('user', transcript);
+                sendMessageToBackend(transcript, 'voice');
+            };
+        } else {
+            alert("المتصفح لا يدعم الميكروفون. يرجى استخدام Chrome.");
         }
 
-        function closeGateway() {
-            const popup = document.getElementById('gatewayPopup');
-            const content = document.getElementById('gatewayContent');
-            content.classList.add('translate-y-full');
-            popup.classList.add('opacity-0');
-            setTimeout(() => popup.classList.add('hidden'), 300);
+        // === 2. وظائف الواجهة ===
+        document.getElementById('micBtn').onclick = function() {
+            if (!isRecording && recognition) {
+                recognition.start();
+            }
+        };
+
+        function sendMessage(type) {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            if (text) {
+                addMessage('user', text);
+                sendMessageToBackend(text, 'text');
+                input.value = '';
+            }
         }
 
-        function closeLive() {
-            document.getElementById('liveInterface').classList.add('hidden');
+        // === 3. الاتصال بالسيرفر (The Brain) ===
+        async function sendMessageToBackend(text, type) {
+            // إضافة تحميل وهمي
+            const loadingId = addLoadingBubble();
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        history: conversationHistory,
+                        type: type
+                    })
+                });
+
+                const data = await response.json();
+                
+                // إزالة فقاعة التحميل
+                removeLoadingBubble(loadingId);
+
+                // 1. عرض الرد النصي
+                addMessage('ai', data.text);
+                
+                // 2. تحديث التاريخ
+                conversationHistory.push({role: "user", content: text});
+                conversationHistory.push({role: "assistant", content: data.text});
+
+                // 3. تشغيل الصوت (إذا وجد)
+                if (data.audio) {
+                    playAudio(data.audio);
+                }
+
+            } catch (error) {
+                removeLoadingBubble(loadingId);
+                addMessage('ai', "سمحلي، انقطع الاتصال.");
+                console.error(error);
+            }
         }
 
-        let mode = 'text';
-
-        function startVoiceMode() {
-            mode = 'voice';
-            closeGateway();
-            document.getElementById('liveInterface').classList.remove('hidden');
-            document.getElementById('voiceControls').classList.remove('hidden');
-            document.getElementById('textControls').classList.add('hidden');
-            addMessage('ai', 'مرحباً! أنا أمين. راني هنا باش نأكدلك الطلبية. قولي وين تسكن بالضبط؟');
-            // Play welcome audio (Mock for now, needs backend)
+        // تشغيل الصوت من Base64
+        function playAudio(base64Audio) {
+            const audioPlayer = document.getElementById('audioPlayer');
+            audioPlayer.src = "data:audio/wav;base64," + base64Audio;
+            audioPlayer.play();
         }
 
-        function startTextMode() {
-            mode = 'text';
-            closeGateway();
-            document.getElementById('liveInterface').classList.remove('hidden');
-            document.getElementById('voiceControls').classList.add('hidden');
-            document.getElementById('textControls').classList.remove('hidden');
-            addMessage('ai', 'مرحباً! أنا أمين. أكتبلي العنوان تاعك ولا الولاية باش نبعثولك المنتج.');
-        }
-
+        // === دوال مساعدة للعرض ===
         function addMessage(sender, text) {
             const box = document.getElementById('chatBox');
             const div = document.createElement('div');
             const isAI = sender === 'ai';
             div.className = `flex ${isAI ? 'justify-start' : 'justify-end'}`;
             div.innerHTML = `
-                <div class="max-w-[80%] p-3 rounded-2xl text-sm ${isAI ? 'bg-white text-slate-800 shadow-sm rounded-tl-none' : 'bg-rose-600 text-white rounded-tr-none'}">
+                <div class="max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${isAI ? 'bg-white text-slate-800 rounded-tl-none border border-slate-100' : 'bg-rose-600 text-white rounded-tr-none'}">
                     ${text}
                 </div>
             `;
@@ -223,8 +277,35 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        // === WEB SPEECH API & BACKEND LOGIC (To be connected) ===
-        // هنا سنضيف كود الميكروفون لاحقاً عند الربط مع الباكند
+        function addLoadingBubble() {
+            const id = 'loading-' + Date.now();
+            const box = document.getElementById('chatBox');
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'flex justify-start';
+            div.innerHTML = `
+                <div class="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex gap-1">
+                    <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                    <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100"></div>
+                    <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-200"></div>
+                </div>
+            `;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+            return id;
+        }
+
+        function removeLoadingBubble(id) {
+            const el = document.getElementById(id);
+            if(el) el.remove();
+        }
+
+        // === Gateway Logic (نفس القديم) ===
+        function openGateway() { document.getElementById('gatewayPopup').classList.remove('hidden'); setTimeout(() => { document.getElementById('gatewayPopup').classList.remove('opacity-0'); document.getElementById('gatewayContent').classList.remove('translate-y-full'); }, 10); }
+        function closeGateway() { document.getElementById('gatewayContent').classList.add('translate-y-full'); document.getElementById('gatewayPopup').classList.add('opacity-0'); setTimeout(() => document.getElementById('gatewayPopup').classList.add('hidden'), 300); }
+        function startVoiceMode() { closeGateway(); document.getElementById('liveInterface').classList.remove('hidden'); document.getElementById('voiceControls').classList.remove('hidden'); document.getElementById('textControls').classList.add('hidden'); addMessage('ai', 'مرحباً! أنا أمين. راني هنا باش نأكدلك الطلبية. قولي وين تسكن بالضبط؟'); playAudioFromText('مرحبا'); } 
+        function startTextMode() { closeGateway(); document.getElementById('liveInterface').classList.remove('hidden'); document.getElementById('voiceControls').classList.add('hidden'); document.getElementById('textControls').classList.remove('hidden'); addMessage('ai', 'مرحباً! أنا أمين. أكتبلي العنوان تاعك ولا الولاية.'); }
+        function closeLive() { document.getElementById('liveInterface').classList.add('hidden'); }
     </script>
 </body>
 </html>
