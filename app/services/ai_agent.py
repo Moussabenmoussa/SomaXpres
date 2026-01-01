@@ -10,10 +10,22 @@ PERSONAS = {
 
 class AIAgent:
     def __init__(self, groq_key, gemini_key):
-        self.groq_client = Groq(api_key=groq_key)
+        # فحص وجود المفاتيح قبل البدء
+        if not groq_key:
+            self.groq_client = None
+        else:
+            self.groq_client = Groq(api_key=groq_key)
+            
         self.gemini_key = gemini_key
 
     def think_and_speak(self, user_input, history, product_context, merchant_rules, persona="amine", input_type="text"):
+        # إذا لم يكن هناك مفتاح، رد برسالة واضحة
+        if not self.groq_client:
+            return {
+                "text": "عذراً، يجب إدخال مفتاح API في لوحة التحكم أولاً لكي أعمل! 🛑",
+                "audio": None
+            }
+
         selected_persona = PERSONAS.get(persona, PERSONAS["amine"])
         
         system_prompt = f"""
@@ -21,7 +33,7 @@ class AIAgent:
         الأسلوب: {selected_persona['style']}
         المنتج: {product_context}
         القوانين: {merchant_rules}
-        كن مختصراً (أقل من 20 كلمة).
+        كن مختصراً جداً.
         """
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -38,14 +50,14 @@ class AIAgent:
             ai_text = completion.choices[0].message.content
 
             audio_b64 = None
-            if input_type == "voice":
+            if input_type == "voice" and self.gemini_key:
                 audio_b64 = self.generate_audio(ai_text, selected_persona['voice_id'])
 
             return { "text": ai_text, "audio": audio_b64 }
 
         except Exception as e:
             print(f"AI Error: {e}")
-            return {"text": "سمحلي، الشبكة ثقيلة.", "audio": None}
+            return {"text": "سمحلي خويا، كاين مشكل في الاتصال.", "audio": None}
 
     def generate_audio(self, text, voice_name):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={self.gemini_key}"
