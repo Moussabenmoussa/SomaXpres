@@ -3,159 +3,198 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SomaXpres - تفاصيل المنتج</title>
+    <title>{{ product.name }} | SomaXpres</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background-color: #f8fafc; }
         
-        .scrolling-wrapper {
-            display: flex;
-            overflow-x: auto;
-            scroll-snap-type: x mandatory;
-            -webkit-overflow-scrolling: touch;
-        }
-        .card {
-            flex: 0 0 100%;
-            scroll-snap-align: start;
-        }
-        
-        .voice-wave {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 40px;
-            gap: 4px;
-        }
-        .bar {
-            width: 4px;
-            height: 10px;
-            background: #e11d48;
-            border-radius: 10px;
-            animation: bounce 0.5s infinite;
-        }
-        @keyframes bounce { 0%, 100% { height: 10px; } 50% { height: 30px; } }
-        
+        /* إخفاء شريط التمرير */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* تأثيرات ناعمة */
+        .glass-nav {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        .voice-wave .bar {
+            width: 4px; height: 10px; background: #e11d48; border-radius: 10px; animation: bounce 0.5s infinite;
+        }
+        @keyframes bounce { 0%, 100% { height: 10px; } 50% { height: 25px; } }
     </style>
 </head>
-<body class="pb-24"> 
-    
-    <div class="relative bg-white shadow-sm">
-        <div class="scrolling-wrapper no-scrollbar" id="imageSlider">
-            <img src="https://placehold.co/600x600/png?text=Product+Image" class="card w-full h-[400px] object-cover">
-            <img src="https://placehold.co/600x600/eee/31343c?text=Side+View" class="card w-full h-[400px] object-cover">
+<body class="pb-32 antialiased text-slate-800">
+
+    <div class="relative w-full bg-white shadow-sm overflow-hidden group">
+        <div class="absolute top-4 right-4 z-10 bg-rose-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+            تخفيض حصري 🔥
         </div>
-        <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2">
-            <div class="w-2 h-2 rounded-full bg-slate-800"></div>
+        
+        <div class="flex overflow-x-auto snap-x snap-mandatory no-scrollbar" id="gallery">
+            <img src="{{ product.image }}" class="snap-center w-full h-[400px] object-cover" alt="{{ product.name }}">
+        </div>
+        
+        <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-1.5">
+            <div class="w-2 h-2 rounded-full bg-slate-800 transition-all duration-300"></div>
             <div class="w-2 h-2 rounded-full bg-slate-300"></div>
         </div>
     </div>
 
-    <div class="p-5 bg-white mb-2">
-        <div class="flex justify-between items-start">
-            <h1 class="text-xl font-bold text-slate-800 leading-snug mb-2">ساعة فاخرة للرجال - مقاومة للماء (Original)</h1>
-        </div>
-        <div class="flex items-end gap-2 mt-2">
-            <span class="text-3xl font-black text-rose-600">3,500 دج</span>
-            <span class="text-sm text-slate-400 line-through mb-1">5,800 دج</span>
-        </div>
-        <div class="mt-3 flex items-center gap-1 text-amber-500 text-sm font-bold">
-            <i class="fas fa-star"></i> 4.8 <span class="text-slate-400 font-normal">(120 طلب)</span>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-3 gap-2 p-4 text-center bg-white text-xs text-slate-600">
-        <div class="flex flex-col items-center gap-1">
-            <i class="fas fa-truck text-xl text-slate-700"></i>
-            <span>توصيل 58 ولاية</span>
-        </div>
-        <div class="flex flex-col items-center gap-1">
-            <i class="fas fa-shield-halved text-xl text-slate-700"></i>
-            <span>ضمان الجودة</span>
-        </div>
-        <div class="flex flex-col items-center gap-1">
-            <i class="fas fa-hand-holding-dollar text-xl text-slate-700"></i>
-            <span>دفع عند الاستلام</span>
-        </div>
-    </div>
-
-    <div class="fixed bottom-0 left-0 w-full bg-white border-t border-slate-100 p-3 flex gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 safe-area-bottom">
-        <button onclick="openGateway()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-rose-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
-            <span>اطلب الآن</span>
-            <i class="fas fa-angle-left"></i>
-        </button>
-    </div>
-
-    <div id="gatewayPopup" class="fixed inset-0 bg-slate-900/80 z-[60] hidden flex items-end sm:items-center justify-center opacity-0 transition-opacity duration-300">
-        <div class="bg-white w-full sm:w-[400px] rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300" id="gatewayContent">
-            <div class="text-center mb-6">
-                <h3 class="text-xl font-bold text-slate-800">كيف تفضل الطلب؟</h3>
-                <p class="text-slate-500 text-sm mt-1">اختر الطريقة الأسرع لك</p>
+    <main class="max-w-xl mx-auto">
+        <div class="p-5 bg-white mb-2 shadow-sm rounded-b-3xl relative -mt-4 z-20">
+            <div class="flex justify-between items-end mb-3">
+                <div class="flex flex-col">
+                    <span class="text-sm text-slate-400 line-through decoration-rose-500/50 decoration-2">
+                        {{ (product.price|int * 1.3)|round|int }} دج
+                    </span>
+                    <span class="text-3xl font-black text-rose-600 leading-none">
+                        {{ product.price }} <span class="text-sm font-bold text-slate-600">دج</span>
+                    </span>
+                </div>
+                <div class="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">
+                    <i class="fas fa-star text-amber-500 text-xs"></i>
+                    <span class="text-xs font-bold text-amber-700">4.9</span>
+                    <span class="text-[10px] text-slate-400">(+200 تقييم)</span>
+                </div>
             </div>
+
+            <h1 class="text-xl font-bold text-slate-900 leading-snug mb-4">
+                {{ product.name }}
+            </h1>
+
+            <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div class="flex justify-between text-xs font-bold text-slate-600 mb-1">
+                    <span>الكمية المتبقية</span>
+                    <span class="text-rose-600">8 قطع فقط!</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-2">
+                    <div class="bg-rose-500 h-2 rounded-full w-[85%] shadow-[0_0_10px_rgba(225,29,72,0.5)]"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 px-4 mb-2">
+            <div class="bg-white p-3 rounded-2xl text-center shadow-sm border border-slate-50 flex flex-col items-center gap-2">
+                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-lg">
+                    <i class="fas fa-truck-fast"></i>
+                </div>
+                <span class="text-[10px] font-bold text-slate-600 leading-tight">توصيل سريع<br>58 ولاية</span>
+            </div>
+            <div class="bg-white p-3 rounded-2xl text-center shadow-sm border border-slate-50 flex flex-col items-center gap-2">
+                <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center text-lg">
+                    <i class="fas fa-shield-check"></i>
+                </div>
+                <span class="text-[10px] font-bold text-slate-600 leading-tight">ضمان<br>حقيقي</span>
+            </div>
+            <div class="bg-white p-3 rounded-2xl text-center shadow-sm border border-slate-50 flex flex-col items-center gap-2">
+                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center text-lg">
+                    <i class="fas fa-hand-holding-dollar"></i>
+                </div>
+                <span class="text-[10px] font-bold text-slate-600 leading-tight">الدفع<br>عند الاستلام</span>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 mb-2 shadow-sm">
+            <h3 class="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <i class="fas fa-align-right text-rose-500"></i> تفاصيل المنتج
+            </h3>
+            <p class="text-sm text-slate-600 leading-7 whitespace-pre-line">
+                {{ product.description }}
+                <br><br>
+                ✅ تصميم أصلي وأنيق.
+                ✅ جودة تصنيع عالية.
+                ✅ ضمان الرضا 100%.
+            </p>
+        </div>
+
+    </main>
+
+    <div class="fixed bottom-0 left-0 w-full glass-nav border-t border-slate-200/50 p-3 pb-safe z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
+        <div class="max-w-xl mx-auto flex gap-3">
+            <button onclick="openGateway()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-rose-200 active:scale-95 transition-all flex items-center justify-center gap-2 relative overflow-hidden group">
+                <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+                <span>اطلب الآن</span>
+                <i class="fas fa-angle-left animate-pulse"></i>
+            </button>
+            
+            <button class="w-14 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center border border-slate-200 hover:bg-slate-200 active:scale-95">
+                <i class="fab fa-whatsapp text-xl text-green-600"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="gatewayPopup" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] hidden flex items-end sm:items-center justify-center opacity-0 transition-opacity duration-300">
+        <div class="bg-white w-full sm:w-[400px] rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl" id="gatewayContent">
+            <div class="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-6"></div>
+            
+            <h3 class="text-xl font-bold text-slate-800 text-center mb-1">تأكيد الطلب</h3>
+            <p class="text-slate-500 text-sm text-center mb-6">اختر الطريقة الأسرع لإتمام طلبك</p>
             
             <div class="grid grid-cols-2 gap-4">
-                <button onclick="startVoiceMode()" class="p-5 border-2 border-slate-100 rounded-2xl hover:border-rose-100 hover:bg-rose-50 transition group">
+                <button onclick="startVoiceMode()" class="relative p-4 border border-slate-200 rounded-2xl hover:border-rose-500 hover:bg-rose-50 transition group overflow-hidden">
+                    <div class="absolute top-2 left-2 w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition">
-                        <i class="fas fa-microphone text-xl"></i>
+                        <i class="fas fa-microphone text-lg"></i>
                     </div>
                     <div class="text-center">
-                        <span class="block font-bold text-slate-800">اتصال صوتي</span>
-                        <span class="text-xs text-slate-400">تحدث مباشرة (أسرع)</span>
+                        <span class="block font-bold text-slate-800 text-sm">مكالمة صوتية</span>
+                        <span class="text-[10px] text-rose-500 font-bold">الأكثر طلباً 🔥</span>
                     </div>
                 </button>
 
-                <button onclick="startTextMode()" class="p-5 border-2 border-slate-100 rounded-2xl hover:border-blue-100 hover:bg-blue-50 transition group">
+                <button onclick="startTextMode()" class="p-4 border border-slate-200 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition group">
                     <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition">
-                        <i class="fas fa-comment-dots text-xl"></i>
+                        <i class="fas fa-comment-dots text-lg"></i>
                     </div>
                     <div class="text-center">
-                        <span class="block font-bold text-slate-800">محادثة كتابية</span>
-                        <span class="text-xs text-slate-400">دردشة عادية</span>
+                        <span class="block font-bold text-slate-800 text-sm">محادثة كتابية</span>
+                        <span class="text-[10px] text-slate-400">دردشة عادية</span>
                     </div>
                 </button>
             </div>
             
-            <button onclick="closeGateway()" class="mt-6 w-full text-slate-400 py-2">إلغاء</button>
+            <button onclick="closeGateway()" class="mt-6 w-full py-3 text-slate-400 text-sm font-medium hover:text-slate-600 transition">إلغاء</button>
         </div>
     </div>
 
     <div id="liveInterface" class="fixed inset-0 bg-white z-[70] hidden flex flex-col">
-        <div class="p-4 border-b flex justify-between items-center bg-white">
+        <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-white shadow-sm z-10">
             <div class="flex items-center gap-3">
                 <div class="relative">
-                    <img src="https://ui-avatars.com/api/?name=Amine&background=e11d48&color=fff" class="w-10 h-10 rounded-full">
+                    <img src="https://ui-avatars.com/api/?name=Amine&background=e11d48&color=fff" class="w-10 h-10 rounded-full border-2 border-white shadow-md">
                     <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
                 </div>
                 <div>
-                    <h3 class="font-bold text-slate-800" id="agentName">أمين</h3>
-                    <p class="text-xs text-green-600">متصل الآن</p>
+                    <h3 class="font-bold text-slate-800 text-sm" id="agentName">المساعد الذكي (أمين)</h3>
+                    <p class="text-[10px] text-slate-500">يرد فوراً ⚡</p>
                 </div>
             </div>
-            <button onclick="closeLive()" class="w-8 h-8 flex items-center justify-center bg-slate-100 rounded-full text-slate-500">✕</button>
+            <button onclick="closeLive()" class="w-8 h-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 rounded-full text-slate-500 transition">✕</button>
         </div>
 
-        <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+        <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 scroll-smooth">
             </div>
 
-        <div id="voiceControls" class="p-6 bg-white border-t text-center hidden">
-            <div id="waveAnimation" class="voice-wave opacity-0 mb-4">
-                <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        <div id="voiceControls" class="p-8 bg-white border-t border-slate-100 text-center hidden rounded-t-3xl shadow-[0_-5px_30px_rgba(0,0,0,0.03)]">
+            <div id="waveAnimation" class="voice-wave opacity-0 mb-6 h-8 justify-center">
+                <div class="bar"></div><div class="bar" style="animation-delay: 0.1s"></div><div class="bar" style="animation-delay: 0.2s"></div><div class="bar"></div>
             </div>
-            <p id="statusText" class="text-sm text-slate-400 mb-4">اضغط للتحدث</p>
-            <button id="micBtn" class="w-16 h-16 bg-rose-600 text-white rounded-full shadow-xl shadow-rose-200 flex items-center justify-center mx-auto text-2xl active:scale-90 transition">
+            <p id="statusText" class="text-sm font-bold text-slate-400 mb-6">اضغط وتحدث لتأكيد طلبك</p>
+            <button id="micBtn" class="w-20 h-20 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full shadow-xl shadow-rose-200 flex items-center justify-center mx-auto text-3xl active:scale-90 transition-transform ring-4 ring-rose-50">
                 <i class="fas fa-microphone"></i>
             </button>
         </div>
 
-        <div id="textControls" class="p-3 bg-white border-t hidden">
-            <div class="flex gap-2">
-                <input type="text" id="textInput" placeholder="اكتب رسالتك..." class="flex-1 bg-slate-100 border-0 rounded-xl px-4 py-3 focus:ring-2 focus:ring-rose-500 outline-none">
-                <button onclick="sendMessage('text')" class="w-12 bg-rose-600 text-white rounded-xl flex items-center justify-center hover:bg-rose-700">
-                    <i class="fas fa-paper-plane"></i>
+        <div id="textControls" class="p-3 bg-white border-t border-slate-100 hidden">
+            <div class="flex gap-2 items-center">
+                <input type="text" id="textInput" placeholder="اكتب هنا..." class="flex-1 bg-slate-100 border-0 rounded-2xl px-5 py-3.5 text-sm focus:ring-2 focus:ring-rose-500 outline-none transition-all">
+                <button onclick="sendMessage('text')" class="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-rose-700 active:scale-95 transition-all">
+                    <i class="fas fa-paper-plane text-sm transform -translate-x-0.5 translate-y-0.5"></i>
                 </button>
             </div>
         </div>
@@ -164,28 +203,28 @@
     <audio id="audioPlayer" class="hidden"></audio>
 
     <script>
+        // === نفس منطق الجافاسكريبت السابق (تم الاحتفاظ به لضمان عمل الميزات) ===
         let conversationHistory = [];
         let isRecording = false;
         let recognition = null;
 
-        // === 1. إعداد الميكروفون ===
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
-            recognition.lang = 'ar-DZ'; // اللهجة الجزائرية
+            recognition.lang = 'ar-DZ';
             
             recognition.onstart = function() {
                 isRecording = true;
-                document.getElementById('statusText').innerText = "جاري الاستماع...";
+                document.getElementById('statusText').innerText = "أنا أسمعك...";
+                document.getElementById('statusText').classList.add('text-rose-600');
                 document.getElementById('waveAnimation').classList.remove('opacity-0');
-                document.getElementById('micBtn').classList.add('animate-pulse');
             };
 
             recognition.onend = function() {
                 isRecording = false;
                 document.getElementById('statusText').innerText = "جاري المعالجة...";
+                document.getElementById('statusText').classList.remove('text-rose-600');
                 document.getElementById('waveAnimation').classList.add('opacity-0');
-                document.getElementById('micBtn').classList.remove('animate-pulse');
             };
 
             recognition.onresult = function(event) {
@@ -193,17 +232,10 @@
                 addMessage('user', transcript);
                 sendMessageToBackend(transcript, 'voice');
             };
-        } else {
-            console.log("Speech Recognition not supported");
         }
 
-        // === 2. وظائف الواجهة ===
         document.getElementById('micBtn').onclick = function() {
-            if (!isRecording && recognition) {
-                recognition.start();
-            } else if (!recognition) {
-                alert("يرجى استخدام متصفح Google Chrome لدعم الميكروفون.");
-            }
+            if (!isRecording && recognition) recognition.start();
         };
 
         function sendMessage(type) {
@@ -216,18 +248,13 @@
             }
         }
 
-        // === 3. الاتصال بالسيرفر ===
         async function sendMessageToBackend(text, type) {
             const loadingId = addLoadingBubble();
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: text,
-                        history: conversationHistory,
-                        type: type
-                    })
+                    body: JSON.stringify({ message: text, history: conversationHistory, type: type })
                 });
                 const data = await response.json();
                 removeLoadingBubble(loadingId);
@@ -238,7 +265,6 @@
             } catch (error) {
                 removeLoadingBubble(loadingId);
                 addMessage('ai', "سمحلي، انقطع الاتصال.");
-                console.error(error);
             }
         }
 
@@ -252,8 +278,12 @@
             const box = document.getElementById('chatBox');
             const div = document.createElement('div');
             const isAI = sender === 'ai';
-            div.className = `flex ${isAI ? 'justify-start' : 'justify-end'}`;
-            div.innerHTML = `<div class="max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${isAI ? 'bg-white text-slate-800 rounded-tl-none border border-slate-100' : 'bg-rose-600 text-white rounded-tr-none'}">${text}</div>`;
+            div.className = `flex ${isAI ? 'justify-start' : 'justify-end'} animate-fade-in-up`;
+            div.innerHTML = `
+                <div class="max-w-[85%] p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm ${isAI ? 'bg-white text-slate-700 border border-slate-100 rounded-tl-none' : 'bg-rose-600 text-white rounded-tr-none'}">
+                    ${text}
+                </div>
+            `;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
@@ -263,17 +293,36 @@
             const box = document.getElementById('chatBox');
             const div = document.createElement('div');
             div.id = id;
-            div.className = 'flex justify-start';
-            div.innerHTML = `<div class="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex gap-1"><div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div><div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100"></div><div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-200"></div></div>`;
+            div.className = 'flex justify-start animate-fade-in-up';
+            div.innerHTML = `<div class="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex gap-1"><div class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></div><div class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></div></div>`;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
             return id;
         }
+
         function removeLoadingBubble(id) { const el = document.getElementById(id); if(el) el.remove(); }
-        function openGateway() { document.getElementById('gatewayPopup').classList.remove('hidden'); setTimeout(() => { document.getElementById('gatewayPopup').classList.remove('opacity-0'); document.getElementById('gatewayContent').classList.remove('translate-y-full'); }, 10); }
-        function closeGateway() { document.getElementById('gatewayContent').classList.add('translate-y-full'); document.getElementById('gatewayPopup').classList.add('opacity-0'); setTimeout(() => document.getElementById('gatewayPopup').classList.add('hidden'), 300); }
+        
+        // Popups Logic
+        function openGateway() { 
+            const popup = document.getElementById('gatewayPopup');
+            const content = document.getElementById('gatewayContent');
+            popup.classList.remove('hidden'); 
+            setTimeout(() => { 
+                popup.classList.remove('opacity-0'); 
+                content.classList.remove('translate-y-full'); 
+            }, 10); 
+        }
+        
+        function closeGateway() { 
+            const popup = document.getElementById('gatewayPopup');
+            const content = document.getElementById('gatewayContent');
+            content.classList.add('translate-y-full'); 
+            popup.classList.add('opacity-0'); 
+            setTimeout(() => popup.classList.add('hidden'), 300); 
+        }
+
         function startVoiceMode() { closeGateway(); document.getElementById('liveInterface').classList.remove('hidden'); document.getElementById('voiceControls').classList.remove('hidden'); document.getElementById('textControls').classList.add('hidden'); addMessage('ai', 'مرحباً! أنا أمين. راني هنا باش نأكدلك الطلبية. قولي وين تسكن بالضبط؟'); } 
-        function startTextMode() { closeGateway(); document.getElementById('liveInterface').classList.remove('hidden'); document.getElementById('voiceControls').classList.add('hidden'); document.getElementById('textControls').classList.remove('hidden'); addMessage('ai', 'مرحباً! أنا أمين. أكتبلي العنوان تاعك ولا الولاية.'); }
+        function startTextMode() { closeGateway(); document.getElementById('liveInterface').classList.remove('hidden'); document.getElementById('voiceControls').classList.add('hidden'); document.getElementById('textControls').classList.remove('hidden'); addMessage('ai', 'مرحباً! أنا أمين. أكتبلي العنوان تاعك.'); }
         function closeLive() { document.getElementById('liveInterface').classList.add('hidden'); }
     </script>
 </body>
