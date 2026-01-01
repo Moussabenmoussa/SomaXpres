@@ -1,81 +1,81 @@
-from flask import Blueprint, render_template, request, jsonify, abort
+from flask import Blueprint, render_template, request, jsonify
 from bson.objectid import ObjectId
 from app.services.db import get_collection
 from app.services.ai_agent import AIAgent
+# تأكد أن TEMP_MEMORY مستوردة هنا
 from app.services.utils import get_merchant_api_keys, check_credit_balance, deduct_credit, TEMP_MEMORY
 
 bp = Blueprint('public', __name__)
 
-# 1. صفحة المنتج (الديناميكية الحقيقية)
 @bp.route('/p/<product_id>')
 def product_page(product_id):
-    products_col = get_collection('products')
+    # محاولة البحث في الذاكرة (للمنتجات الجديدة)
     product = None
-
-    # أ. محاولة البحث في قاعدة البيانات (MongoDB)
-    if products_col is not None:
-        try:
-            product = products_col.find_one({"_id": ObjectId(product_id)})
-        except:
-            pass # إذا كان الآيدي غير صالح
-
-    # ب. محاولة البحث في الذاكرة المؤقتة (إذا كانت القاعدة معطلة)
-    if not product:
-        # البحث عن المنتج الذي تم إنشاؤه مؤخراً في الذاكرة
-        # (هذا حل احتياطي للتجربة إذا لم تكن MongoDB متصلة)
-        for key, val in TEMP_MEMORY.items():
-            if key == f"prod_{product_id}" or key == product_id:
-                product = val
-                break
+    if f"prod_{product_id}" in TEMP_MEMORY:
+        product = TEMP_MEMORY[f"prod_{product_id}"]
     
-    # ج. إذا لم نجد المنتج، نعرض صفحة خطأ 404
+    # محاولة البحث في قاعدة البيانات
     if not product:
-        return "<h1>عذراً، هذا المنتج غير موجود أو تم حذفه!</h1>", 404
+        products_col = get_collection('products')
+        if products_col:
+            try:
+                product = products_col.find_one({"_id": ObjectId(product_id)})
+            except: pass
 
-    # د. عرض المنتج الحقيقي
+    if not product:
+        return "<h1>المنتج غير موجود (تأكد من الرابط)</h1>", 404
+
     return render_template('product.html', product=product)
 
-
-# 2. نقطة الاتصال مع الروبوت (Chat API)
 @bp.route('/api/chat', methods=['POST'])
 def chat_api():
-    data = request.json
-    user_input = data.get('message')
-    history = data.get('history', [])
-    input_type = data.get('type', 'text')
-    merchant_id = "demo_merchant_id"
+    try:
+        data = request.json
+        user_input = data.get('message')
+        history = data.get('history', [])
+        input_type = data.get('type', 'text')
+        merchant_id = "demo_merchant_id"
 
-    # جلب المفاتيح
-    groq_key, gemini_key = get_merchant_api_keys(merchant_id)
-    agent = AIAgent(groq_key, gemini_key)
-    
-    # --- هنا الذكاء: جلب سياق المنتج الحالي ---
-    # نحاول معرفة المنتج الذي يتحدث عنه الزبون من الرابط السابق (Referer) أو نفترض أنه آخر منتج
-    # للتبسيط الآن، سنستخدم سياقاً عاماً أو نبحث عن المنتج إذا تم تمرير الـ ID
-    
-    # (ملاحظة: لجعل الروبوت يعرف المنتج بدقة، يجب أن يرسل product_id مع الطلب،
-    # لكن حالياً سنستخدم الذاكرة أو قاعدة البيانات لجلب آخر منتج تمت زيارته أو تفاصيل عامة)
-    
-    # حل مؤقت ذكي: الروبوت سيستخدم "تعليمات المنتج" المخزنة إذا وجدت
-    product_context = "منتج مميز من SomaXpres."
-    merchant_rules = "كن لبقاً ومحترفاً."
-    
-    # محاولة جلب "دستور المنتج" من آخر منتج مضاف (للتجربة)
-    products_col = get_collection('products')
-    if products_col:
-        last_product = products_col.find_one(sort=[('_id', -1)])
-        if last_product:
-            product_context = f"{last_product.get('name')} بسعر {last_product.get('price')} دج."
-            merchant_rules = last_product.get('ai_instructions', merchant_rules)
+        # 1. جلب المفاتيح
+        groq_key, gemini_key = get_merchant_api_keys(merchant_id)
+        
+        # 2. تشغيل العميل الذكي
+        agent = AIAgent(groq_key, gemini_key)
+        
+        # 3. إعداد سياق المنتج (IPTV)
+        # نحاول جلب "آخر منتج تمت إضافته" للذاكرة لاستخدامه كسياق
+        # (حل مؤقت ذكي لكي يفهم الروبوت أنك تبيع IPTV)
+        product_context = "منتج عام."
+        merchant_rules = "كن مفيداً."
+        
+        # البحث عن آخر تعليمات في الذاكرة
+        for key, val in TEMP_MEMORY.items():
+            if key.startswith('prod_'):
+                product_context = f"{val.get('name')} بسعر {val.get('price')}"
+                merchant_rules = val.get('ai_instructions', merchant_rules)
+        
+        # البحث في قاعدة البيانات إذا وجدت
+        products_col = get_collection('products')
+        if products_col:
+            last_prod = products_col.find_one(sort=[('_id', -1)])
+            if last_prod:
+                product_context = f"{last_prod.get('name')} بسعر {last_prod.get('price')}"
+                merchant_rules = last_prod.get('ai_instructions', merchant_rules)
 
-    response = agent.think_and_speak(
-        user_input=user_input,
-        history=history,
-        product_context=product_context,
-        merchant_rules=merchant_rules,
-        persona="amine",
-        input_type=input_type
-    )
+        # 4. الرد
+        response = agent.think_and_speak(
+            user_input=user_input,
+            history=history,
+            product_context=product_context,
+            merchant_rules=merchant_rules,
+            persona="amine",
+            input_type=input_type
+        )
+        
+        deduct_credit(merchant_id)
+        return jsonify(response)
 
-    deduct_credit(merchant_id)
-    return jsonify(response)
+    except Exception as e:
+        print(f"🔥 Server Error: {e}")
+        # رد احتياطي بدل "انقطع الاتصال"
+        return jsonify({"text": "سمحلي، كاين ضغط على السيرفر. عاود أكتبلي؟", "audio": None})
