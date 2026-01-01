@@ -1,0 +1,186 @@
+{% extends "layout_dashboard.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+    
+    <!-- Header -->
+    <div class="flex justify-between items-end">
+        <div>
+            <h2 class="text-3xl font-bold text-gray-800">نظرة عامة</h2>
+            <p class="text-gray-500 mt-1">أهلاً بك، إليك أداء متجرك اليوم.</p>
+        </div>
+        <a href="/dashboard/products/new" class="bg-black text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition shadow-lg flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i> منتج جديد
+        </a>
+    </div>
+
+    <!-- Stats Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        
+        <!-- Card 1: Revenue (Example) -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex justify-between items-start mb-4">
+                <div class="p-3 bg-green-50 text-green-600 rounded-lg">
+                    <i data-lucide="dollar-sign" class="w-6 h-6"></i>
+                </div>
+                <span class="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">+12%</span>
+            </div>
+            <h3 class="text-gray-500 text-sm font-medium">إجمالي المبيعات (Estim.)</h3>
+            <p class="text-2xl font-bold text-gray-900 mt-1">$1,240</p>
+        </div>
+
+        <!-- Card 2: Orders -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex justify-between items-start mb-4">
+                <div class="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                    <i data-lucide="shopping-bag" class="w-6 h-6"></i>
+                </div>
+            </div>
+            <h3 class="text-gray-500 text-sm font-medium">الطلبات المؤكدة</h3>
+            <p class="text-2xl font-bold text-gray-900 mt-1">{{ orders_count }}</p>
+        </div>
+
+        <!-- Card 3: Visits -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex justify-between items-start mb-4">
+                <div class="p-3 bg-purple-50 text-purple-600 rounded-lg">
+                    <i data-lucide="eye" class="w-6 h-6"></i>
+                </div>
+            </div>
+            <h3 class="text-gray-500 text-sm font-medium">زيارات المتجر</h3>
+            <p class="text-2xl font-bold text-gray-900 mt-1">{{ total_views }}</p>
+        </div>
+
+        <!-- Card 4: Conversion Rate -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex justify-between items-start mb-4">
+                <div class="p-3 bg-orange-50 text-orange-600 rounded-lg">
+                    <i data-lucide="activity" class="w-6 h-6"></i>
+                </div>
+            </div>
+            <h3 class="text-gray-500 text-sm font-medium">نسبة التحويل (AI Performance)</h3>
+            <p class="text-2xl font-bold text-gray-900 mt-1">{{ conversion_rate }}%</p>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Main Chart -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
+            <h3 class="font-bold text-lg mb-6">تحليل الأداء (الزيارات vs الطلبات)</h3>
+            <div class="relative h-72 w-full">
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </div>
+
+        <!-- AI Activity Feed (Simulated) -->
+        <div class="bg-black text-white p-6 rounded-xl shadow-lg">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                AI Agent Live Feed
+            </h3>
+            <div class="space-y-4 text-sm text-gray-300">
+                <!-- أمثلة لنشاط الروبوت - سنجعلها حقيقية لاحقاً -->
+                <div class="flex gap-3 items-start border-l-2 border-green-500 pl-3">
+                    <p><strong>Amine</strong> نجح في إغلاق صفقة بيع منتج "ساعة ألترا". <span class="text-gray-500 text-xs block">منذ دقيقتين</span></p>
+                </div>
+                <div class="flex gap-3 items-start border-l-2 border-yellow-500 pl-3">
+                    <p><strong>Sarah</strong> تتفاوض الآن مع زبون من وهران حول السعر. <span class="text-gray-500 text-xs block">الآن</span></p>
+                </div>
+                <div class="flex gap-3 items-start border-l-2 border-red-500 pl-3">
+                    <p><strong>System</strong> رفض طلب لعدم اكتمال رقم الهاتف. <span class="text-gray-500 text-xs block">منذ 10 دقائق</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Orders Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="font-bold text-lg">آخر الطلبات</h3>
+            <a href="/dashboard/orders" class="text-sm text-blue-600 font-medium hover:underline">عرض الكل</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-right">
+                <thead class="bg-gray-50 text-gray-500">
+                    <tr>
+                        <th class="px-6 py-4 font-medium">المنتج</th>
+                        <th class="px-6 py-4 font-medium">الزبون</th>
+                        <th class="px-6 py-4 font-medium">الحالة</th>
+                        <th class="px-6 py-4 font-medium">التاريخ</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for order in recent_orders %}
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-6 py-4 font-medium text-gray-900">{{ order.product_name }}</td>
+                        <td class="px-6 py-4 text-gray-600">{{ order.customer_phone or order.customer_email }}</td>
+                        <td class="px-6 py-4">
+                            <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
+                                {{ order.status }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-gray-400">{{ order.created_at.strftime('%Y-%m-%d') }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-8 text-center text-gray-400">لا توجد طلبات حتى الآن. ابدأ بنشر منتجك الأول!</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    
+    // البيانات القادمة من الباك إند
+    const labels = {{ chart_data.labels | tojson }};
+    const visitsData = {{ chart_data.visits | tojson }};
+    const ordersData = {{ chart_data.orders | tojson }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'الزيارات',
+                    data: visitsData,
+                    borderColor: '#9CA3AF', // رمادي
+                    backgroundColor: 'rgba(156, 163, 175, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'الطلبات',
+                    data: ordersData,
+                    borderColor: '#000000', // أسود ملكي
+                    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                    tension: 0.4,
+                    fill: true,
+                    borderWidth: 3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { borderDash: [2, 4] } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+</script>
+{% endblock %}
