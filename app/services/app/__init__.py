@@ -18,10 +18,10 @@ def create_app():
 
     # 5. تسجيل الموجهات (Blueprints)
     # ملاحظة: سنقوم بإلغاء التعليق هنا عندما ننشئ ملفات routes في الدفعة القادمة
-    # from .routes import public, dashboard, api
-    # app.register_blueprint(public.bp)
-    # app.register_blueprint(dashboard.bp)
-    # app.register_blueprint(api.bp)
+     from .routes import public, dashboard, api
+     app.register_blueprint(public.bp)
+     app.register_blueprint(dashboard.bp)
+     app.register_blueprint(api.bp)
 
     # فحص صحة السيرفر
     @app.route('/health')
