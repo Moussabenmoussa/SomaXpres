@@ -1,0 +1,109 @@
+{% extends "layout_dashboard.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    
+    <div class="flex justify-between items-center mb-8">
+        <h2 class="text-2xl font-bold text-gray-800">إضافة منتج جديد</h2>
+        <div class="flex gap-2">
+            <button class="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">إلغاء</button>
+            <button type="submit" form="productForm" class="px-6 py-2 bg-black text-white rounded-lg hover:bg-gray-800 shadow-lg">نشر المنتج</button>
+        </div>
+    </div>
+
+    <form id="productForm" action="/dashboard/products/new" method="POST" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- العمود الأيمن: تفاصيل المنتج (يأخذ مساحة عمودين) -->
+        <div class="lg:col-span-2 space-y-6">
+            
+            <!-- الكارت الأول: المعلومات الأساسية -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 class="font-bold text-lg mb-4">تفاصيل المنتج</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">اسم المنتج</label>
+                    <input type="text" name="name" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none" placeholder="مثلاً: دورة التسويق الرقمي">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">السعر</label>
+                        <input type="number" name="price" step="0.01" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none" placeholder="0.00">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">العملة</label>
+                        <select name="currency" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none bg-white">
+                            <option value="$">USD ($)</option>
+                            <option value="DZD">DZD (دج)</option>
+                            <option value="EUR">EUR (€)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الوصف (مرجع الـ AI)</label>
+                    <textarea name="description" rows="5" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none" placeholder="اكتب كل التفاصيل بدقة هنا. الذكاء الاصطناعي سيستخدم هذا النص للإجابة على أسئلة الزبائن."></textarea>
+                    <p class="text-xs text-gray-500 mt-1">تنبيه: لا تكتب معلومات كاذبة، الروبوت سيلتزم بما تكتبه هنا.</p>
+                </div>
+            </div>
+
+            <!-- الكارت الثاني: الصور -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 class="font-bold text-lg mb-4">الوسائط</h3>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">رابط الصورة الرئيسية</label>
+                    <input type="url" name="image_url" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none" placeholder="https://example.com/image.jpg">
+                </div>
+            </div>
+        </div>
+
+        <!-- العمود الأيسر: إعدادات الذكاء (The Brain) -->
+        <div class="lg:col-span-1 space-y-6">
+            
+            <!-- إعدادات النوع -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 class="font-bold text-lg mb-4">نوع المنتج</h3>
+                <div class="space-y-3">
+                    <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                        <input type="radio" name="product_type" value="physical" checked class="w-4 h-4 text-black focus:ring-black">
+                        <div>
+                            <span class="block font-bold text-sm">منتج مادي (Physical)</span>
+                            <span class="block text-xs text-gray-500">يتطلب شحن + عنوان.</span>
+                        </div>
+                    </label>
+                    <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                        <input type="radio" name="product_type" value="digital" class="w-4 h-4 text-black focus:ring-black">
+                        <div>
+                            <span class="block font-bold text-sm">منتج رقمي (Digital)</span>
+                            <span class="block text-xs text-gray-500">تسليم فوري عبر الإيميل.</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- إعدادات البائع الآلي (AI Agent) -->
+            <div class="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-6 rounded-xl shadow-lg">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="bot" class="text-blue-400"></i>
+                    <h3 class="font-bold text-lg">إعدادات العميل الذكي</h3>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-gray-300 mb-1">اسم البائع</label>
+                    <input type="text" name="bot_name" value="Amine" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400">
+                </div>
+
+                <div class="mb-2">
+                    <label class="block text-xs font-medium text-gray-300 mb-1">تعليمات سرية (AI Constitution)</label>
+                    <textarea name="ai_instructions" rows="4" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 text-sm" placeholder="مثلاً: كن صارماً في السعر، أو اعرض خصم 10% إذا تردد الزبون."></textarea>
+                </div>
+                
+                <p class="text-xs text-gray-400 leading-relaxed">
+                    هذه التعليمات لا يراها الزبون، ولكنها توجه سلوك الروبوت أثناء التفاوض.
+                </p>
+            </div>
+
+        </div>
+    </form>
+</div>
+{% endblock %}
