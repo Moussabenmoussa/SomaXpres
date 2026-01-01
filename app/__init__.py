@@ -1,35 +1,23 @@
 from flask import Flask
-from flask_cors import CORS
-from config import Config
-from .services.db import init_db
+from pymongo import MongoClient
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# تهيئة قاعدة البيانات (Global)
+mongo = MongoClient(os.getenv("MONGO_URI"))
+db = mongo.get_database("somaxpres_db")
 
 def create_app():
-    # 1. إنشاء تطبيق فلاسك
     app = Flask(__name__)
-    
-    # 2. تحميل الإعدادات
-    app.config.from_object(Config)
-    
-    # 3. تفعيل CORS
-    CORS(app)
-    
-    # 4. تهيئة قاعدة البيانات
-    init_db(app)
+    app.secret_key = os.getenv("SECRET_KEY")
 
-    # 5. تسجيل الموجهات (تم التفعيل)
-    from .routes import public, dashboard
-    app.register_blueprint(public.bp)
-    app.register_blueprint(dashboard.bp)
-
-    # فحص صحة السيرفر
-    @app.route('/health')
-    def health_check():
-        from .services.db import get_db
-        db_status = "Connected" if get_db() is not None else "Disconnected"
-        return {
-            "status": "online", 
-            "app": "SomaXpres AI", 
-            "database": db_status
-        }
+    # تسجيل المسارات (Blueprints)
+    from app.routes.dashboard import dashboard_bp
+    from app.routes.public import public_bp
+    
+    app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
+    app.register_blueprint(public_bp, url_prefix='/') # الروت الرئيسي
 
     return app
