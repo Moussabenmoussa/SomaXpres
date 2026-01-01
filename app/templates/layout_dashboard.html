@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"> <!-- دعم العربية والاتجاه من اليمين -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SomaXpres Pro | لوحة التحكم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- أيقونات -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #F3F4F6; }
+        .nav-item { @apply flex items-center gap-3 px-4 py-3 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer; }
+        .nav-item.active { @apply bg-black text-white; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+    <!-- القائمة الجانبية (Sidebar) -->
+    <aside class="w-64 bg-white border-l border-gray-200 flex flex-col hidden md:flex">
+        <div class="p-6 border-b border-gray-100">
+            <h1 class="text-2xl font-bold tracking-tight">Soma<span class="text-blue-600">Xpres</span></h1>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="/dashboard" class="nav-item">
+                <i data-lucide="layout-dashboard"></i> نظرة عامة
+            </a>
+            <a href="/dashboard/products" class="nav-item active">
+                <i data-lucide="shopping-bag"></i> المنتجات
+            </a>
+            <a href="/dashboard/orders" class="nav-item">
+                <i data-lucide="shopping-cart"></i> الطلبات
+            </a>
+            <a href="/dashboard/ai-settings" class="nav-item">
+                <i data-lucide="bot"></i> شخصية الروبوت
+            </a>
+        </nav>
+
+        <div class="p-4 border-t border-gray-100">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-gray-200"></div>
+                <div>
+                    <p class="text-sm font-bold">المتجر الافتراضي</p>
+                    <p class="text-xs text-gray-500">plan: Premium</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- المحتوى الرئيسي -->
+    <main class="flex-1 overflow-y-auto p-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
