@@ -107,19 +107,44 @@
     </main>
 
     <script>
+        // دالة تعمل تلقائياً عند فتح الصفحة لجلب المفاتيح
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('/dashboard/api/get-keys');
+                if (res.ok) {
+                    const data = await res.json();
+                    if(data.groq_key) document.getElementById('groqKey').value = data.groq_key;
+                    if(data.gemini_key) document.getElementById('geminiKey').value = data.gemini_key;
+                }
+            } catch (err) {
+                console.error("فشل جلب المفاتيح", err);
+            }
+        });
+
         async function saveKeys() {
             const groq = document.getElementById('groqKey').value;
             const gemini = document.getElementById('geminiKey').value;
+            const btn = document.querySelector('button[onclick="saveKeys()"]');
             
-            const res = await fetch('/dashboard/api/save-keys', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({groq_key: groq, gemini_key: gemini})
-            });
+            btn.innerText = "جاري الحفظ...";
             
-            if(res.ok) {
-                document.getElementById('saveMsg').classList.remove('hidden');
-                setTimeout(() => document.getElementById('saveMsg').classList.add('hidden'), 3000);
+            try {
+                const res = await fetch('/dashboard/api/save-keys', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({groq_key: groq, gemini_key: gemini})
+                });
+                
+                if(res.ok) {
+                    document.getElementById('saveMsg').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('saveMsg').classList.add('hidden'), 3000);
+                } else {
+                    alert("حدث خطأ! تأكد أن قاعدة البيانات متصلة.");
+                }
+            } catch (e) {
+                alert("خطأ: " + e);
+            } finally {
+                btn.innerText = "حفظ المفاتيح";
             }
         }
 
