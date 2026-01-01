@@ -3,151 +3,187 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SomaXpres - لوحة التحكم</title>
+    <title>SomaXpres - غرفة القيادة</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>body { font-family: 'Cairo', sans-serif; background: #f1f5f9; }</style>
+    <style>
+        body { font-family: 'Cairo', sans-serif; background: #f8fafc; }
+        .glass { background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    </style>
 </head>
-<body class="flex h-screen overflow-hidden">
+<body class="flex h-screen overflow-hidden text-slate-800">
 
-    <aside class="w-64 bg-slate-900 text-slate-300 hidden md:flex flex-col">
+    <aside class="w-64 bg-slate-900 text-slate-300 hidden md:flex flex-col z-20">
         <div class="p-6 text-center border-b border-slate-800">
-            <h1 class="text-2xl font-bold text-white tracking-wider">Soma<span class="text-rose-500">AI</span></h1>
+            <h1 class="text-2xl font-black text-white tracking-wider">Soma<span class="text-rose-500">Ai</span></h1>
+            <p class="text-xs text-slate-500 mt-1">نسخة التجار المحترفين</p>
         </div>
         <nav class="flex-1 p-4 space-y-2">
             <a href="#" class="flex items-center gap-3 p-3 bg-rose-600 text-white rounded-xl shadow-lg shadow-rose-900/20">
-                <i class="fas fa-chart-pie w-6"></i> الرئيسية
+                <i class="fas fa-box-open w-6"></i> إدارة المنتجات
             </a>
             <a href="#" class="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition">
-                <i class="fas fa-robot w-6"></i> إعداد الروبوت
+                <i class="fas fa-list-check w-6"></i> الطلبات المستلمة
             </a>
             <a href="#" class="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition">
-                <i class="fas fa-key w-6"></i> المفاتيح (API)
+                <i class="fas fa-robot w-6"></i> إعدادات الذكاء
             </a>
         </nav>
-        <div class="p-4 border-t border-slate-800">
-            <div class="bg-slate-800 p-4 rounded-xl">
-                <p class="text-xs text-slate-400 mb-1">الرصيد المتبقي</p>
-                <div class="flex justify-between items-end">
-                    <span class="text-xl font-bold text-white">42 نقطة</span>
-                    <button onclick="topUp()" class="text-xs bg-rose-500 text-white px-2 py-1 rounded hover:bg-rose-600">شحن +</button>
-                </div>
-            </div>
-        </div>
     </aside>
 
-    <main class="flex-1 overflow-y-auto">
-        <header class="bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-10">
-            <h2 class="text-lg font-bold text-slate-800">👋 مرحباً، متجر الأناقة</h2>
-            <div class="flex items-center gap-4">
-                <button class="w-10 h-10 bg-slate-100 rounded-full text-slate-600 hover:bg-slate-200"><i class="fas fa-bell"></i></button>
-                <img src="https://ui-avatars.com/api/?name=Shop&background=0f172a&color=fff" class="w-10 h-10 rounded-full border-2 border-slate-200">
+    <main class="flex-1 overflow-y-auto relative">
+        <header class="bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-10 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <h2 class="text-xl font-bold text-slate-800">🛍️ إضافة منتج جديد</h2>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">متصل ✅</span>
             </div>
         </header>
 
-        <div class="p-6 max-w-6xl mx-auto space-y-6">
-            
-            <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <i class="fas fa-users-gear text-rose-500"></i> اختر الموظف الافتراضي
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <label class="cursor-pointer relative">
-                        <input type="radio" name="persona" class="peer sr-only" checked>
-                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-rose-500 peer-checked:bg-rose-50 transition text-center">
-                            <img src="https://ui-avatars.com/api/?name=Amine&background=e11d48&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
-                            <h4 class="font-bold text-slate-800">أمين (الشاب)</h4>
-                            <p class="text-xs text-slate-500 mt-1">عفوي، مباشر، شعبي</p>
-                        </div>
-                        <div class="absolute top-4 right-4 text-rose-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
-                    </label>
+        <div class="p-6 max-w-5xl mx-auto space-y-8">
 
-                    <label class="cursor-pointer relative">
-                        <input type="radio" name="persona" class="peer sr-only">
-                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-pink-500 peer-checked:bg-pink-50 transition text-center">
-                            <img src="https://ui-avatars.com/api/?name=Sarah&background=ec4899&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
-                            <h4 class="font-bold text-slate-800">سارة (اللطيفة)</h4>
-                            <p class="text-xs text-slate-500 mt-1">جذابة، حنونة، مقنعة</p>
-                        </div>
-                        <div class="absolute top-4 right-4 text-pink-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
+            <section class="glass p-8 rounded-3xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 to-purple-600"></div>
+                
+                <h3 class="font-bold text-lg text-slate-800 mb-6 flex items-center gap-2">
+                    <span class="bg-rose-100 text-rose-600 w-8 h-8 flex items-center justify-center rounded-lg"><i class="fas fa-plus"></i></span>
+                    بيانات المنتج
+                </h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">اسم المنتج (للعرض)</label>
+                        <input type="text" id="prodName" placeholder="مثال: ساعة رولكس الفاخرة" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">السعر (دج)</label>
+                        <input type="number" id="prodPrice" placeholder="3500" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all font-bold">
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-bold text-slate-700 mb-2">رابط الصورة</label>
+                    <input type="text" id="prodImg" placeholder="https://..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 outline-none transition-all text-xs font-mono text-slate-500">
+                </div>
+
+                <div class="bg-indigo-50 border border-indigo-100 p-6 rounded-2xl mb-6">
+                    <label class="block text-sm font-black text-indigo-900 mb-2 flex justify-between">
+                        <span>🧠 تعليمات الروبوت (AI Instructions)</span>
+                        <span class="text-indigo-400 text-xs font-normal">اكتب دستور هذا المنتج هنا</span>
                     </label>
-                    
-                    <label class="cursor-pointer relative">
-                        <input type="radio" name="persona" class="peer sr-only">
-                        <div class="p-4 border-2 border-slate-100 rounded-xl hover:bg-slate-50 peer-checked:border-blue-500 peer-checked:bg-blue-50 transition text-center">
-                            <img src="https://ui-avatars.com/api/?name=Nadir&background=3b82f6&color=fff" class="w-16 h-16 rounded-full mx-auto mb-3 shadow-md">
-                            <h4 class="font-bold text-slate-800">نذير (الرسمي)</h4>
-                            <p class="text-xs text-slate-500 mt-1">جاد، محترم، وثائقي</p>
-                        </div>
-                        <div class="absolute top-4 right-4 text-blue-500 opacity-0 peer-checked:opacity-100"><i class="fas fa-check-circle"></i></div>
-                    </label>
+                    <textarea id="prodRules" rows="4" class="w-full p-4 bg-white border border-indigo-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-sm leading-relaxed" 
+                    placeholder="اكتب هنا كل شيء تريد أن يعرفه الروبوت عن هذا المنتج..
+مثال: 'هذا المنتج أصلي وعليه ضمان سنة. التوصيل مجاني للعاصمة فقط. لا تقبل الطلب إذا كان الزبون من ولاية بعيدة جداً. كن صارماً في السعر ولا تقبل التخفيض.'"></textarea>
+                    <p class="text-xs text-indigo-500 mt-2"><i class="fas fa-info-circle"></i> الروبوت سيقرأ هذا النص وينفذه بالحرف أثناء المحادثة.</p>
+                </div>
+
+                <button onclick="publishProduct()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-2 text-lg">
+                    <span>نشر المنتج وإنشاء الرابط</span>
+                    <i class="fas fa-rocket"></i>
+                </button>
+
+                <div id="resultArea" class="hidden mt-6 bg-green-50 border border-green-200 rounded-2xl p-6 text-center animate-pulse">
+                    <div class="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3 text-xl"><i class="fas fa-check"></i></div>
+                    <h4 class="font-bold text-green-800 mb-2">تم إنشاء صفحة الهبوط بنجاح!</h4>
+                    <p class="text-sm text-green-600 mb-4">انسخ هذا الرابط واستخدمه في إعلاناتك:</p>
+                    <div class="bg-white border border-green-200 p-3 rounded-lg flex items-center justify-between gap-2">
+                        <code id="finalLink" class="text-sm font-mono text-slate-600 truncate">...</code>
+                        <button onclick="copyLink()" class="text-green-600 font-bold text-sm hover:underline">نسخ</button>
+                    </div>
+                    <a id="previewBtn" href="#" target="_blank" class="inline-block mt-4 text-green-700 font-bold underline">تجربة الصفحة <i class="fas fa-external-link-alt"></i></a>
                 </div>
             </section>
 
-            <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <i class="fas fa-key text-amber-500"></i> مفاتيح التشغيل (API Keys)
-                </h3>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-bold text-slate-700 mb-1">Groq API Key</label>
-                        <input type="password" id="groqKey" placeholder="gsk_..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-slate-700 mb-1">Gemini API Key</label>
-                        <input type="password" id="geminiKey" placeholder="AIzaSy..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 outline-none">
-                    </div>
-                    <button onclick="saveKeys()" class="bg-slate-800 text-white px-6 py-2 rounded-xl hover:bg-slate-900 transition">حفظ المفاتيح</button>
-                    <p id="saveMsg" class="text-green-500 text-sm hidden">تم الحفظ بنجاح!</p>
+            <section class="glass p-6 rounded-2xl opacity-80 hover:opacity-100 transition-opacity">
+                <h3 class="font-bold text-slate-800 mb-4 text-sm">🔑 مفاتيح النظام (API Keys)</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="password" id="groqKey" placeholder="Groq API Key" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                    <input type="password" id="geminiKey" placeholder="Gemini API Key" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
                 </div>
+                <button onclick="saveKeys()" class="mt-3 bg-slate-200 text-slate-600 font-bold py-2 px-6 rounded-lg text-sm hover:bg-slate-300 transition">حفظ المفاتيح</button>
             </section>
 
         </div>
     </main>
 
     <script>
+        // التحميل الأولي
         document.addEventListener('DOMContentLoaded', async () => {
+            // جلب المفاتيح المحفوظة
             try {
                 const res = await fetch('/dashboard/api/get-keys');
-                if (res.ok) {
+                if(res.ok) {
                     const data = await res.json();
                     if(data.groq_key) document.getElementById('groqKey').value = data.groq_key;
                     if(data.gemini_key) document.getElementById('geminiKey').value = data.gemini_key;
                 }
-            } catch (err) {
-                console.error(err);
-            }
+            } catch(e) { console.log(e); }
         });
+
+        // دالة نشر المنتج
+        async function publishProduct() {
+            const btn = document.querySelector('button[onclick="publishProduct()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري الإنشاء...';
+            btn.disabled = true;
+
+            const productData = {
+                name: document.getElementById('prodName').value,
+                price: document.getElementById('prodPrice').value,
+                image: document.getElementById('prodImg').value,
+                ai_instructions: document.getElementById('prodRules').value // هذا هو الدستور!
+            };
+
+            if(!productData.name || !productData.price) {
+                alert("يرجى كتابة اسم المنتج والسعر");
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                return;
+            }
+
+            try {
+                const res = await fetch('/dashboard/api/add-product', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(productData)
+                });
+                
+                const data = await res.json();
+                
+                if(data.success) {
+                    const link = `${window.location.origin}/p/${data.product_id}`;
+                    document.getElementById('resultArea').classList.remove('hidden');
+                    document.getElementById('finalLink').innerText = link;
+                    document.getElementById('previewBtn').href = link;
+                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                } else {
+                    alert("حدث خطأ أثناء الحفظ");
+                }
+            } catch(err) {
+                alert("خطأ في الاتصال بالسيرفر");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
 
         async function saveKeys() {
             const groq = document.getElementById('groqKey').value;
             const gemini = document.getElementById('geminiKey').value;
-            const btn = document.querySelector('button[onclick="saveKeys()"]');
-            
-            btn.innerText = "جاري الحفظ...";
-            
-            try {
-                const res = await fetch('/dashboard/api/save-keys', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({groq_key: groq, gemini_key: gemini})
-                });
-                
-                if(res.ok) {
-                    document.getElementById('saveMsg').classList.remove('hidden');
-                    setTimeout(() => document.getElementById('saveMsg').classList.add('hidden'), 3000);
-                }
-            } catch (e) {
-                alert("خطأ في الاتصال");
-            } finally {
-                btn.innerText = "حفظ المفاتيح";
-            }
+            await fetch('/dashboard/api/save-keys', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({groq_key: groq, gemini_key: gemini})
+            });
+            alert("تم حفظ المفاتيح بنجاح!");
         }
 
-        async function topUp() {
-            const res = await fetch('/dashboard/api/top-up', {method: 'POST'});
-            if(res.ok) alert("تم شحن 50 نقطة تجريبية!");
+        function copyLink() {
+            const text = document.getElementById('finalLink').innerText;
+            navigator.clipboard.writeText(text);
+            alert("تم نسخ الرابط!");
         }
     </script>
 </body>
