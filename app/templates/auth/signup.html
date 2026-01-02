@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إنشاء حساب تاجر</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 font-['Cairo'] min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+        <h1 class="text-2xl font-bold text-center mb-2">انطلق في تجارتك 🚀</h1>
+        <p class="text-center text-gray-500 mb-6">أنشئ حساباً وابدأ البيع في دقائق.</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="p-3 mb-4 rounded-lg text-sm font-bold {{ 'bg-red-100 text-red-700' if category == 'error' else 'bg-green-100 text-green-700' }}">
+                {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" class="space-y-4">
+            <input type="text" name="store_name" placeholder="اسم المتجر" required class="w-full p-3 border rounded-xl outline-none focus:border-black">
+            <input type="email" name="email" placeholder="البريد الإلكتروني" required class="w-full p-3 border rounded-xl outline-none focus:border-black">
+            <input type="password" name="password" placeholder="كلمة المرور" required class="w-full p-3 border rounded-xl outline-none focus:border-black">
+            
+            <button type="submit" class="w-full bg-black text-white p-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">تسجيل وإنشاء المتجر</button>
+        </form>
+        <p class="text-center mt-4 text-sm">لديك حساب؟ <a href="/auth/login" class="font-bold text-blue-600">دخول</a></p>
+    </div>
+</body>
+</html>
