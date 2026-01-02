@@ -13,8 +13,8 @@ from flask import Flask
 app = Flask(__name__)
 
 # Telegram Config
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU")
-CHAT_ID = os.getenv("CHAT_ID", "8454394574")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHANNEL_ID_HERE")
 
 # Market Config
 TARGET_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT']
