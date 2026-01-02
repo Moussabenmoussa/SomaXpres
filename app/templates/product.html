@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ product.name }}</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', 'Cairo', sans-serif; background-color: #FAFAFA; }
+        .chat-bubble { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .user-msg { background-color: #000; color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .ai-msg { background-color: #ffffff; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #e5e7eb; }
+        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        /* تحسين التمرير */
+        #messages::-webkit-scrollbar { width: 6px; }
+        #messages::-webkit-scrollbar-thumb { background-color: #e5e7eb; border-radius: 10px; }
+    </style>
+</head>
+<body class="pb-24 antialiased">
+
+    <!-- Product Image Slider -->
+    <div class="w-full h-[50vh] bg-gray-100 overflow-hidden relative shadow-sm">
+        {% if product.images %}
+        <img src="{{ product.images[0] }}" class="w-full h-full object-cover object-center" alt="{{ product.name }}">
+        {% else %}
+        <div class="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">No Image</div>
+        {% endif %}
+        
+        <!-- Badge -->
+        <div class="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-gray-900 shadow-sm uppercase tracking-wider">
+            {{ product.product_type }}
+        </div>
+    </div>
+
+    <!-- Product Info -->
+    <div class="max-w-xl mx-auto px-5 py-8 -mt-6 relative z-10 bg-white rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.03)] min-h-[50vh]">
+        <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
+        
+        <h1 class="text-2xl font-bold text-gray-900 mb-2 leading-tight">{{ product.name }}</h1>
+        
+        <div class="flex items-baseline gap-2 mb-6">
+            <span class="text-3xl font-extrabold text-gray-900">{{ product.price }} <span class="text-lg font-medium text-gray-500">{{ product.currency_symbol }}</span></span>
+        </div>
+
+        <!-- Description -->
+        <div class="prose prose-sm text-gray-600 leading-relaxed mb-8">
+            {{ product.description }}
+        </div>
+
+        <!-- Trust Badges -->
+        <div class="grid grid-cols-3 gap-4 border-t border-gray-100 py-6">
+            <div class="text-center">
+                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🛡️</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Guaranteed</div>
+            </div>
+            <div class="text-center">
+                <div class="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🚀</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Fast Delivery</div>
+            </div>
+            <div class="text-center">
+                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">⭐</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Top Rated</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sticky Bottom Bar -->
+    <div class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-6 z-40 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div class="flex flex-col">
+            <span class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Total Price</span>
+            <span class="font-bold text-xl text-gray-900">{{ product.price }}{{ product.currency_symbol }}</span>
+        </div>
+        <button onclick="toggleChat()" class="bg-black text-white px-8 py-3.5 rounded-full font-bold shadow-xl active:scale-95 transition-transform flex items-center gap-2 hover:bg-gray-900">
+            <span>Buy Now</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" /></svg>
+        </button>
+    </div>
+
+    <!-- Chat Interface -->
+    <div id="chatWidget" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        <div class="absolute bottom-0 w-full md:max-w-md md:left-1/2 md:-translate-x-1/2 h-[90vh] bg-[#F3F4F6] rounded-t-3xl shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 transform translate-y-full" id="chatContainer">
+            
+            <!-- Header -->
+            <div class="bg-white p-4 flex justify-between items-center shadow-sm z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px]">
+                        <img src="https://ui-avatars.com/api/?name={{ product.bot_name }}&background=fff" class="w-full h-full rounded-full border-2 border-white" alt="Bot">
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-gray-900">{{ product.bot_name or 'Assistant' }}</h3>
+                        <p class="text-xs text-green-500 font-medium flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Active Now
+                        </p>
+                    </div>
+                </div>
+                <button onclick="toggleChat()" class="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- Messages -->
+            <div id="messages" class="flex-1 overflow-y-auto p-4 flex flex-col space-y-2 bg-[#F3F4F6]">
+                <div class="ai-msg chat-bubble">
+                    مرحباً! أنا <b>{{ product.bot_name }}</b> 👋. <br>
+                    عجبك المنتج "{{ product.name }}"؟ إذا عندك أي سؤال أنا هنا، وإذا حاب تطلب خبرني برك!
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-4 bg-white border-t border-gray-100">
+                <form id="chatForm" class="flex gap-2 items-end">
+                    <input type="text" id="userInput" class="flex-1 bg-gray-100 border-0 rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all placeholder-gray-400" placeholder="اكتب رسالتك هنا..." autocomplete="off">
+                    <button type="submit" class="bg-black text-white w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center hover:bg-gray-800 transition active:scale-95 shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" viewBox="0 0 20 20" fill="currentColor"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatWidget = document.getElementById('chatWidget');
+        const chatContainer = document.getElementById('chatContainer');
+        const messagesDiv = document.getElementById('messages');
+        const chatForm = document.getElementById('chatForm');
+        const userInput = document.getElementById('userInput');
+        
+        let chatHistory = [];
+        const productId = "{{ product._id }}";
+
+        function toggleChat() {
+            if (chatWidget.classList.contains('hidden')) {
+                chatWidget.classList.remove('hidden');
+                setTimeout(() => {
+                    chatWidget.classList.remove('opacity-0');
+                    chatContainer.classList.remove('translate-y-full');
+                }, 10);
+            } else {
+                chatContainer.classList.add('translate-y-full');
+                chatWidget.classList.add('opacity-0');
+                setTimeout(() => {
+                    chatWidget.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        function appendMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = `chat-bubble ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
+            div.innerHTML = text;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showTyping() {
+            const div = document.createElement('div');
+            div.id = 'typingIndicator';
+            div.className = 'ai-msg chat-bubble flex gap-1 items-center w-16';
+            div.innerHTML = `<div class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></div><div class="typing-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0.2s"></div><div class="typing-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0.4s"></div>`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function removeTyping() {
+            const el = document.getElementById('typingIndicator');
+            if(el) el.remove();
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            appendMessage('user', text);
+            userInput.value = '';
+            showTyping();
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        message: text,
+                        product_id: productId,
+                        history: chatHistory
+                    })
+                });
+                const data = await res.json();
+                
+                chatHistory.push({role: "user", content: text});
+                chatHistory.push({role: "assistant", content: data.response});
+                
+                removeTyping();
+                appendMessage('ai', data.response);
+
+            } catch (err) {
+                removeTyping();
+                appendMessage('ai', "خطأ في الاتصال، حاول مرة أخرى.");
+            }
+        });
+    </script>
+</body>
+</html>
