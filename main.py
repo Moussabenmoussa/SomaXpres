@@ -1,4 +1,3 @@
-
 import time
 import requests
 import threading
@@ -6,15 +5,18 @@ from flask import Flask, jsonify
 from datetime import datetime
 
 # ---------------- إعدادات البوت الكاملة ----------------
+# 👇 تأكد من أن التوكن والآيدي هنا صحيحان
 BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
 CHAT_ID = "1413638026"
+
 SCAN_LIMIT = 50  # فحص أفضل 50 عملة عالمياً
 # -----------------------------------------------------
 
 app = Flask(__name__)
 signals_history = []
 
-# إشارة ترحيبية تظهر في التطبيق فوراً عند التشغيل
+# ✅ إشارة ترحيبية تظهر في التطبيق فوراً عند التشغيل
+# (هذا الاسم SYSTEM-ONLINE هو ما سيظهر لك في التطبيق عند التحديث)
 signals_history.append({
     "symbol": "SYSTEM-ONLINE",
     "price": 0.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 100, "time": "NOW"
@@ -26,18 +28,20 @@ def home():
 
 @app.route('/api/signals')
 def get_signals():
-    # هذا الرابط للتطبيق
+    # رابط API الذي يقرأ منه التطبيق
     return jsonify(signals_history)
 
 def send_telegram_alert(message):
-    # وظيفة التليجرام (تمت إعادتها)
+    # وظيفة إرسال الرسائل لتيليجرام
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try: requests.post(url, json=payload, timeout=10)
-    except Exception as e: print(f"Telegram Error: {e}")
+    try: 
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e: 
+        print(f"Telegram Error: {e}")
 
 def get_coingecko_data():
-    # جلب البيانات من السوق العالمي (CoinGecko)
+    # جلب البيانات من السوق العالمي (CoinGecko) لتجاوز الحظر
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
         "vs_currency": "usd",
@@ -60,7 +64,8 @@ def get_coingecko_data():
 
 def run_scanner():
     print("🚀 SomaScanner Ultimate Started...")
-    # إرسال رسالة تفعيل للتليجرام
+    
+    # 🔔 إرسال رسالة تفعيل للتليجرام فور التشغيل
     send_telegram_alert("✅ **تم تشغيل النظام بالكامل!**\n(App + Telegram + CoinGecko)")
     
     while True:
@@ -80,11 +85,11 @@ def run_scanner():
                     if price_change_1h is None: price_change_1h = 0.0
                     else: price_change_1h = float(price_change_1h)
                     
-                    # 🔥 الشرط: ارتفاع أكثر من 0.5% في الساعة الأخيرة (يمكنك تعديله)
+                    # 🔥 الشرط: ارتفاع أكثر من 0.5% في الساعة الأخيرة
                     is_pump = price_change_1h > 0.5 
                     
                     if is_pump:
-                        # حساب الأهداف
+                        # حساب الأهداف (سكالبينغ)
                         tp1 = current_price * 1.02
                         tp2 = current_price * 1.05
                         sl = current_price * 0.98
@@ -101,7 +106,7 @@ def run_scanner():
                         exists = any(d['symbol'] == symbol for d in signals_history)
                         
                         if not exists:
-                            # 1. التحديث للتطبيق (API)
+                            # 1. تحديث القائمة للتطبيق
                             signals_history.insert(0, signal_data)
                             if len(signals_history) > 30: signals_history.pop()
                             
@@ -109,7 +114,7 @@ def run_scanner():
                             if len(signals_history) > 1 and signals_history[-1]['symbol'] == "SYSTEM-ONLINE":
                                 signals_history.pop()
 
-                            # 2. الإرسال للتليجرام 🔔
+                            # 2. إرسال تنبيه لتيليجرام 🔔
                             msg = f"""
 🚀 **فرصة جديدة (Global)**
 💎 العملة: #{symbol}
