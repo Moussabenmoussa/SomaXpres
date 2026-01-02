@@ -4,46 +4,49 @@ import threading
 import pandas as pd
 import numpy as np
 import os
-import random
-import json
-import concurrent.futures
-from flask import Flask, session, redirect, request, render_template_string
 from datetime import datetime
-from pymongo import MongoClient
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask
 
 # ==========================================
-# 1. إعدادات المشروع
+# 1. CONFIGURATION
 # ==========================================
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "trado_master_key_v3")
 
-# قاعدة البيانات
-mongo_uri = os.getenv("MONGO_URI")
-db = None
-users_collection = None
+# Telegram Config
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU")
+CHAT_ID = os.getenv("CHAT_ID", "1413638026")
 
-if mongo_uri:
-    try:
-        client = MongoClient(mongo_uri)
-        db = client.get_database("tradovip_db")
-        users_collection = db.users
-        print("✅ MongoDB Connected")
-    except: print("❌ Database Error")
+# Market Config
+TARGET_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT']
+SCALP_TIMEFRAME = '5m'
+SWING_TIMEFRAME = '15m'
 
-# إعدادات البريد والتداول
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "support@tradovip.com")
-TARGET_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT']
-TIMEFRAME = '15m'
+# Memory to prevent duplicate signals
 signals_history = []
 
 # ==========================================
-# 2. محرك التداول (نفس الكود الذي اشتغل سابقاً)
+# 2. HELPER FUNCTIONS
 # ==========================================
-def get_market_data(symbol):
+def send_telegram(message):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("⚠️ Missing Bot Token or Chat ID")
+        return
+    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"❌ Telegram Error: {e}")
+
+def get_binance_data(symbol, interval):
     url = "https://api.binance.com/api/v3/klines"
-    params = {'symbol': symbol, 'interval': TIMEFRAME, 'limit': 300}
+    params = {'symbol': symbol, 'interval': interval, 'limit': 100}
     try:
         r = requests.get(url, params=params, timeout=5)
         if r.status_code == 200:
@@ -55,322 +58,193 @@ def get_market_data(symbol):
         return None
     except: return None
 
-def calculate_indicators(df):
+# ==========================================
+# 3. TECHNICAL INDICATORS (Manual & Fast)
+# ==========================================
+def apply_indicators(df):
+    # RSI (14)
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['rsi'] = 100 - (100 / (1 + rs))
+
+    # EMA 200 (Trend)
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
+
+    # MACD (12, 26, 9)
     k = df['close'].ewm(span=12, adjust=False, min_periods=12).mean()
     d = df['close'].ewm(span=26, adjust=False, min_periods=26).mean()
     df['macd'] = k - d
-    df['macdsignal'] = df['macd'].ewm(span=9, adjust=False, min_periods=9).mean()
+    df['signal'] = df['macd'].ewm(span=9, adjust=False, min_periods=9).mean()
+
+    # Bollinger Bands (20, 2)
+    df['sma20'] = df['close'].rolling(window=20).mean()
+    df['std'] = df['close'].rolling(window=20).std()
+    df['upper_bb'] = df['sma20'] + (2 * df['std'])
+    df['lower_bb'] = df['sma20'] - (2 * df['std'])
+
+    # ATR (14) - For Dynamic Stop Loss
     high_low = df['high'] - df['low']
     high_close = np.abs(df['high'] - df['close'].shift())
     low_close = np.abs(df['low'] - df['close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
     df['atr'] = true_range.rolling(14).mean()
+
     return df
 
-def analyze_market_pro(symbol):
-    df = get_market_data(symbol)
-    if df is None or len(df) < 200: return None
-    try: df = calculate_indicators(df)
-    except: return None
+# ==========================================
+# 4. STRATEGY ENGINES
+# ==========================================
 
-    price = df['close'].iloc[-1]
-    rsi = df['rsi'].iloc[-1]
-    macd_val = df['macd'].iloc[-1]
-    macd_sig = df['macdsignal'].iloc[-1]
-    ema200 = df['ema200'].iloc[-1]
-    atr = df['atr'].iloc[-1]
+def analyze_scalper(symbol):
+    """
+    Engine 1: SCALPER (5m)
+    Logic: Price touches Lower Bollinger Band + RSI Oversold (<30) -> Buy Bounce
+    """
+    df = get_binance_data(symbol, SCALP_TIMEFRAME)
+    if df is None: return None
+    df = apply_indicators(df)
 
-    signal = None
-    if price > ema200:
-        if rsi < 45 and macd_val > macd_sig:
-            sl = price - (1.5 * atr)
-            tp1 = price + (1.5 * atr)
-            tp2 = price + (3.0 * atr)
-            signal = {"type": "LONG 🟢", "symbol": symbol, "price": price, "sl": sl, "tp1": tp1, "tp2": tp2, "reason": "Trend Pullback"}
-    elif price < ema200:
-        if rsi > 55 and macd_val < macd_sig:
-            sl = price + (1.5 * atr)
-            tp1 = price - (1.5 * atr)
-            tp2 = price - (3.0 * atr)
-            signal = {"type": "SHORT 🔴", "symbol": symbol, "price": price, "sl": sl, "tp1": tp1, "tp2": tp2, "reason": "Trend Rejection"}
-            
-    if signal:
-        for k in ['price', 'sl', 'tp1', 'tp2']: signal[k] = round(signal[k], 4)
-        signal['time'] = datetime.now().strftime("%H:%M")
-        return signal
+    current = df.iloc[-1]
+    
+    # Logic: LONG only for now (Safer)
+    if current['close'] <= current['lower_bb'] and current['rsi'] < 35:
+        # Quick Targets
+        tp = current['close'] * 1.015 # 1.5% Profit
+        sl = current['close'] * 0.99  # 1% Loss
+        
+        return {
+            "symbol": symbol,
+            "type": "SCALP BUY ⚡",
+            "price": current['close'],
+            "tp": tp,
+            "sl": sl,
+            "reason": "Bollinger Bounce + RSI Oversold"
+        }
     return None
 
-def engine_loop():
-    print("🚀 Engine Started...")
+def analyze_swing(symbol):
+    """
+    Engine 2: SWING/SNIPER (15m)
+    Logic: Price > EMA200 (Uptrend) + MACD Crossover + RSI Healthy
+    """
+    df = get_binance_data(symbol, SWING_TIMEFRAME)
+    if df is None: return None
+    df = apply_indicators(df)
+
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    # Logic: Trend Following
+    if curr['close'] > curr['ema200']: # Uptrend
+        # MACD Bullish Cross (Line crosses Signal upwards)
+        if prev['macd'] < prev['signal'] and curr['macd'] > curr['signal']:
+            if curr['rsi'] < 60: # Room to grow
+                
+                # Dynamic Risk Management using ATR
+                atr = curr['atr']
+                sl = curr['close'] - (1.5 * atr)
+                tp1 = curr['close'] + (1.5 * atr)
+                tp2 = curr['close'] + (3.0 * atr)
+
+                return {
+                    "symbol": symbol,
+                    "type": "VIP SWING 💎",
+                    "price": curr['close'],
+                    "tp1": tp1,
+                    "tp2": tp2,
+                    "sl": sl,
+                    "reason": "Trend Pullback + MACD Cross"
+                }
+    return None
+
+# ==========================================
+# 5. MAIN LOOP
+# ==========================================
+def bot_engine():
+    print("🚀 TRADOVIP Hybrid Engine Started...")
+    
     while True:
         try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                results = list(executor.map(analyze_market_pro, TARGET_PAIRS))
-            for signal in results:
-                if signal:
-                    exists = False
-                    for s in signals_history:
-                        if s['symbol'] == signal['symbol'] and s['type'] == signal['type']: exists = True; break
-                    if not exists:
-                        signals_history.insert(0, signal)
-                        if len(signals_history) > 20: signals_history.pop()
-            time.sleep(60)
+            for symbol in TARGET_PAIRS:
+                
+                # 1. Run Scalper
+                scalp_signal = analyze_scalper(symbol)
+                if scalp_signal:
+                    process_signal(scalp_signal)
+
+                # 2. Run Swing
+                swing_signal = analyze_swing(symbol)
+                if swing_signal:
+                    process_signal(swing_signal)
+                
+                time.sleep(1) # Respect Binance Rate Limits
+
+            time.sleep(60) # Scan every minute
+            
         except Exception as e:
             print(f"Error: {e}")
             time.sleep(10)
 
-t = threading.Thread(target=engine_loop)
+def process_signal(signal):
+    """Check duplicates and send Telegram message"""
+    global signals_history
+    
+    # Duplicate Check (Prevent spamming the same signal within 1 hour)
+    for s in signals_history:
+        if s['symbol'] == signal['symbol'] and s['type'] == signal['type']:
+            time_diff = (datetime.now() - s['time']).total_seconds()
+            if time_diff < 3600: # 1 Hour Cooldown
+                return 
+
+    # Add to history
+    signal['time'] = datetime.now()
+    signals_history.insert(0, signal)
+    if len(signals_history) > 50: signals_history.pop()
+
+    # Format Message
+    if "SCALP" in signal['type']:
+        msg = f"""
+⚡ <b>SCALP SIGNAL</b> ⚡
+<b>#{signal['symbol']}</b>
+
+🔵 <b>Entry:</b> {signal['price']}
+🟢 <b>TP:</b> {signal['tp']:.4f}
+🔴 <b>SL:</b> {signal['sl']:.4f}
+
+<i>Strategy: {signal['reason']}</i>
+"""
+    else:
+        msg = f"""
+💎 <b>VIP SWING SIGNAL</b> 💎
+<b>#{signal['symbol']}</b>
+
+🔵 <b>Entry:</b> {signal['price']}
+
+🎯 <b>Target 1:</b> {signal['tp1']:.4f}
+🎯 <b>Target 2:</b> {signal['tp2']:.4f}
+🛡 <b>Stop Loss:</b> {signal['sl']:.4f}
+
+<i>Logic: {signal['reason']}</i>
+"""
+    
+    # Send
+    print(f"Sending Signal: {signal['symbol']}")
+    send_telegram(msg)
+
+# Start Bot in Background
+t = threading.Thread(target=bot_engine)
 t.daemon = True
 t.start()
 
 # ==========================================
-# 3. خدمة البريد
-# ==========================================
-def send_email(to, subject, html_content):
-    if not BREVO_API_KEY: return
-    url = "https://api.brevo.com/v3/smtp/email"
-    headers = {"accept": "application/json", "api-key": BREVO_API_KEY, "content-type": "application/json"}
-    payload = {"sender": {"name": "TRADOVIP", "email": SENDER_EMAIL}, "to": [{"email": to}], "subject": subject, "htmlContent": html_content}
-    try: requests.post(url, data=json.dumps(payload), headers=headers)
-    except: pass
-
-# ==========================================
-# 4. التصميم (تم تعديله ليدعم الهاتف 100%)
-# ==========================================
-SHARED_STYLE = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-    :root { --primary: #2563eb; --bg: #f8fafc; --text: #1e293b; --success: #10b981; --danger: #ef4444; }
-    
-    * { box-sizing: border-box; }
-    
-    body { 
-        font-family: 'Cairo', sans-serif; 
-        background: var(--bg); 
-        color: var(--text); 
-        margin: 0; 
-        direction: rtl; 
-        font-size: 16px;
-    }
-    
-    /* Navbar Mobile Friendly */
-    .navbar { 
-        background: white; 
-        padding: 15px 20px; 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-        position: sticky; top: 0; z-index: 1000;
-    }
-    .logo { font-size: 20px; font-weight: 800; color: var(--primary); text-decoration: none; }
-    
-    /* Container responsive */
-    .container { 
-        width: 100%; 
-        max-width: 500px; 
-        margin: 0 auto; 
-        padding: 20px; 
-    }
-    
-    .card { 
-        background: white; 
-        padding: 25px; 
-        border-radius: 16px; 
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); 
-        border: 1px solid #e2e8f0; 
-    }
-    
-    /* Inputs Mobile Friendly */
-    input { 
-        width: 100%; 
-        padding: 15px; 
-        margin: 10px 0; 
-        border: 1px solid #cbd5e1; 
-        border-radius: 10px; 
-        font-size: 16px; /* Prevents zoom on iPhone */
-        background: #fff;
-    }
-    
-    .btn { 
-        display: block; 
-        width: 100%; 
-        background: var(--primary); 
-        color: white; 
-        padding: 15px; 
-        border: none; 
-        border-radius: 10px; 
-        font-weight: bold; 
-        font-size: 16px; 
-        cursor: pointer; 
-        text-align: center;
-        text-decoration: none;
-    }
-    
-    .btn:active { transform: scale(0.98); }
-    
-    /* Signal Cards Mobile */
-    .signal-item { 
-        background: white; 
-        border: 1px solid #e2e8f0; 
-        border-radius: 12px; 
-        padding: 15px; 
-        margin-bottom: 15px; 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        border-left: 5px solid transparent; 
-    }
-    .signal-item.long { border-left-color: var(--success); } 
-    .signal-item.short { border-left-color: var(--danger); }
-    
-    .price-box { text-align: left; }
-    .price-val { font-weight: 800; font-size: 18px; }
-    .badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; color: white; display: inline-block; margin-top: 5px; }
-    .badge-long { background: var(--success); } 
-    .badge-short { background: var(--danger); }
-    
-    /* Mobile Typography */
-    h1 { font-size: 28px; line-height: 1.3; }
-    p { font-size: 16px; color: #64748b; }
-</style>
-"""
-
-# ==========================================
-# 5. المسارات (نفس المنطق الذي نجح)
+# 6. WEB SERVER (To Keep Render Alive)
 # ==========================================
 @app.route('/')
-def home():
-    if 'user_id' in session: return redirect('/dashboard')
-    # إضافة meta viewport لدعم الموبايل
-    return render_template_string(f"""
-    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>TRADOVIP</title>{SHARED_STYLE}</head><body>
-        <nav class="navbar">
-            <a href="/" class="logo">TRADOVIP</a>
-            <div><a href="/login" style="margin-left:10px;text-decoration:none;font-weight:bold;color:#333;">دخول</a><a href="/signup" class="btn" style="width:auto;padding:8px 15px;display:inline-block;font-size:14px;">جديد</a></div>
-        </nav>
-        <div style="text-align:center; padding: 60px 20px;">
-            <h1>تداول بذكاء<br><span style="color:var(--primary)">من هاتفك</span></h1>
-            <p>منصة توصيات نخبوية تعمل بالذكاء الاصطناعي.</p>
-            <br>
-            <a href="/signup" class="btn">ابدأ التجربة المجانية</a>
-        </div>
-    </body></html>
-    """)
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    msg = ""
-    if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
-        password = request.form.get('password')
-        user = users_collection.find_one({"email": email}) if users_collection is not None else None
-        if user and check_password_hash(user['password'], password):
-            if user.get('status') == 'pending':
-                session['pending_email'] = email
-                return redirect('/verify')
-            session['user_id'] = str(user['_id'])
-            return redirect('/dashboard')
-        else: msg = "<div class='alert error' style='background:#fee2e2;color:red;padding:10px;border-radius:8px;margin-bottom:10px;text-align:center;'>البيانات غير صحيحة</div>"
-    
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>دخول</title>{SHARED_STYLE}</head><body><div class="container"><div class="card"><h2 style="text-align:center">تسجيل الدخول</h2>{msg}<form method="POST"><label>البريد الإلكتروني</label><input type="email" name="email" required><label>كلمة المرور</label><input type="password" name="password" required><button type="submit" class="btn">دخول</button></form><div style="text-align:center;margin-top:20px;"><a href="/forgot-password" style="color:#64748b;text-decoration:none;">نسيت كلمة المرور؟</a><br><br><a href="/signup" style="color:var(--primary);font-weight:bold;">حساب جديد</a></div></div></div></body></html>""")
-
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    msg = ""
-    if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
-        password = request.form.get('password')
-        if users_collection is not None:
-            if users_collection.find_one({"email": email}): msg = "<div class='alert error' style='background:#fee2e2;color:red;padding:10px;border-radius:8px;margin-bottom:10px;text-align:center;'>البريد مسجل مسبقاً</div>"
-            else:
-                otp = str(random.randint(100000, 999999))
-                users_collection.insert_one({"email": email, "password": generate_password_hash(password), "status": "pending", "otp": otp, "created_at": datetime.utcnow()})
-                send_email(email, "Verify Code", f"<h1 style='text-align:center'>{otp}</h1>")
-                session['pending_email'] = email
-                return redirect('/verify')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>تسجيل</title>{SHARED_STYLE}</head><body><div class="container"><div class="card"><h2 style="text-align:center">حساب جديد</h2>{msg}<form method="POST"><label>البريد</label><input type="email" name="email" required><label>كلمة المرور</label><input type="password" name="password" required><button type="submit" class="btn">تسجيل</button></form><p style="text-align:center;margin-top:20px;"><a href="/login" style="color:var(--primary);">لديك حساب؟</a></p></div></div></body></html>""")
-
-@app.route('/verify', methods=['GET', 'POST'])
-def verify():
-    if 'pending_email' not in session: return redirect('/signup')
-    msg = ""
-    if request.method == 'POST':
-        code = request.form.get('code')
-        user = users_collection.find_one({"email": session['pending_email']})
-        if user and user.get('otp') == code:
-            users_collection.update_one({"email": session['pending_email']}, {"$set": {"status": "active"}})
-            session['user_id'] = str(user['_id'])
-            return redirect('/dashboard')
-        else: msg = "<div class='alert error' style='background:#fee2e2;color:red;padding:10px;text-align:center;'>الكود خطأ</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>تفعيل</title>{SHARED_STYLE}</head><body><div class="container"><div class="card" style="text-align:center"><h2>تفعيل الحساب</h2><p>أدخل الكود المرسل للإيميل</p>{msg}<form method="POST"><input type="text" name="code" style="text-align:center;font-size:24px;letter-spacing:5px;" maxlength="6" required><button type="submit" class="btn">تفعيل</button></form></div></div></body></html>""")
-
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    msg = ""
-    if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
-        user = users_collection.find_one({"email": email}) if users_collection else None
-        if user:
-            code = str(random.randint(100000, 999999))
-            users_collection.update_one({"email": email}, {"$set": {"reset_code": code}})
-            send_email(email, "Reset Password", f"<h1>{code}</h1>")
-            session['reset_email'] = email
-            return redirect('/reset-password')
-        else: msg = "<div class='alert error' style='color:red;text-align:center;'>البريد غير موجود</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>استعادة</title>{SHARED_STYLE}</head><body><div class="container"><div class="card"><h2>استعادة كلمة المرور</h2>{msg}<form method="POST"><input type="email" name="email" placeholder="بريدك الإلكتروني" required><button type="submit" class="btn">إرسال الكود</button></form><p style="text-align:center;margin-top:20px;"><a href="/login">إلغاء</a></p></div></div></body></html>""")
-
-@app.route('/reset-password', methods=['GET', 'POST'])
-def reset_password():
-    if 'reset_email' not in session: return redirect('/forgot-password')
-    msg = ""
-    if request.method == 'POST':
-        code = request.form.get('code')
-        pwd = request.form.get('password')
-        user = users_collection.find_one({"email": session['reset_email']})
-        if user and user.get('reset_code') == code:
-            users_collection.update_one({"email": session['reset_email']}, {"$set": {"password": generate_password_hash(pwd), "reset_code": None}})
-            return redirect('/login')
-        else: msg = "<div class='alert error' style='color:red;text-align:center;'>الكود خطأ</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>كلمة مرور جديدة</title>{SHARED_STYLE}</head><body><div class="container"><div class="card"><h2>تعيين كلمة المرور</h2>{msg}<form method="POST"><input type="text" name="code" placeholder="الكود" required style="text-align:center;letter-spacing:3px;"><input type="password" name="password" placeholder="كلمة المرور الجديدة" required><button type="submit" class="btn">حفظ</button></form></div></div></body></html>""")
-
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session: return redirect('/login')
-    html = ""
-    if not signals_history:
-        html = "<div style='text-align:center; padding:40px; color:#94a3b8;'><div style='font-size:30px;'>⏳</div><p>جاري البحث عن فرص...</p></div>"
-    else:
-        for s in signals_history:
-            cls, badge = ("long", "badge-long") if "LONG" in s['type'] else ("short", "badge-short")
-            html += f"""
-            <div class="signal-item {cls}">
-                <div>
-                    <div style="font-weight:800; font-size:18px; color:var(--primary);">{s['symbol']}</div>
-                    <div style="font-size:12px; color:#64748b;">{s['reason']}</div>
-                    <span class="badge {badge}">{s['type']}</span>
-                </div>
-                <div class="price-box">
-                    <div class="price-val">${s['price']}</div>
-                    <div style="font-size:11px; color:#64748b; margin-top:5px;">
-                        <span style="color:var(--danger)">SL: {s['sl']}</span><br>
-                        <span style="color:var(--success)">TP: {s['tp1']}</span>
-                    </div>
-                    <div style="font-size:10px; color:#cbd5e1; margin-top:5px;">{s['time']}</div>
-                </div>
-            </div>
-            """
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>لوحة التحكم</title>{SHARED_STYLE}<meta http-equiv="refresh" content="30"></head><body><nav class="navbar"><span class="logo">TRADOVIP</span><a href="/logout" style="color:#ef4444;text-decoration:none;font-weight:bold;">خروج</a></nav><div class="container"><h2 style="margin-bottom:20px;">التوصيات الحية 🔴</h2>{html}</div></body></html>""")
-
-@app.route('/logout')
-def logout(): session.clear(); return redirect('/')
+def index():
+    return "<h1>TRADOVIP Bot is Running 24/7 🚀</h1>"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
