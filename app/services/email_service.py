@@ -60,3 +60,27 @@ def send_order_notification(order_data):
 
     # إطلاق الإرسال في خيط منفصل (Thread) لعدم تعطيل الزبون
     Thread(target=_send_async_email, args=(merchant_payload,)).start()
+
+
+# ... (نفس الـ imports السابقة)
+
+def send_verification_code(email, code):
+    """إرسال كود التفعيل (OTP) للمستخدم الجديد"""
+    sender_email = os.getenv("SENDER_EMAIL", "noreply@somaxpres.dz")
+    
+    payload = {
+        "sender": {"name": "SomaXpres Security", "email": sender_email},
+        "to": [{"email": email}],
+        "subject": f"رمز التفعيل الخاص بك: {code}",
+        "htmlContent": f"""
+        <div style="font-family: Arial, text-align: center; padding: 20px;">
+            <h2>مرحباً بك في SomaXpres 🚀</h2>
+            <p>لتفعيل حسابك والبدء في البيع، استخدم الرمز التالي:</p>
+            <h1 style="background: #eee; padding: 10px; letter-spacing: 5px; display: inline-block;">{code}</h1>
+            <p>لا تشارك هذا الرمز مع أحد.</p>
+        </div>
+        """
+    }
+    
+    # إرسال في الخلفية
+    Thread(target=_send_async_email, args=(payload,)).start()
