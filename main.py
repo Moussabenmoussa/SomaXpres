@@ -1,105 +1,132 @@
 import time
 import requests
 import threading
-import traceback
 from flask import Flask, jsonify
 from datetime import datetime
 
-# ---------------- إعدادات الطوارئ ----------------
-SCAN_LIMIT = 5
+# ---------------- إعدادات تجاوز الحظر ----------------
+SCAN_LIMIT = 20
 TIMEFRAME = "5m"
-# -----------------------------------------------
+VOLUME_MULTIPLIER = 1.5 # خففنا الشرط قليلاً ليصطاد بسرعة
+# ----------------------------------------------------
 
 app = Flask(__name__)
-
-# 👇 1. وضعنا إشارة ثابتة ستظهر لك 100% لتتأكد من التطبيق
-signals_history = [
-    {
-        "symbol": "APP-WORKING",
-        "price": 1.0, "tp1": 1.1, "tp2": 1.2, "sl": 0.9,
-        "vol": 100.0,
-        "time": "TEST-OK"
-    }
-]
+signals_history = []
 
 @app.route('/')
 def home():
-    return "✅ SomaScanner API is Running!"
+    return "✅ SomaScanner US-Mode is Running!"
 
 @app.route('/api/signals')
 def get_signals():
     return jsonify(signals_history)
 
-def get_market_data(symbol):
+def get_top_gainers():
+    # 🇺🇸 استخدام الرابط الأمريكي لتجاوز حظر ريندر
+    url = "https://api.binance.us/api/v3/ticker/24hr"
     try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={TIMEFRAME}&limit=5"
-        # خدعة لتجاوز حظر المتصفحات
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        resp = requests.get(url, headers=headers, timeout=5)
-        if resp.status_code == 200: 
-            return resp.json()
-        else:
-            return None
-    except: 
-        return None
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=10)
+        
+        if resp.status_code != 200:
+            print(f"❌ Error: {resp.status_code}")
+            return []
+            
+        data = resp.json()
+        usdt_pairs = []
+        for item in data:
+            symbol = item['symbol']
+            # باينانس الأمريكي يستخدم USD أحياناً بدلاً من USDT
+            if (symbol.endswith("USDT") or symbol.endswith("USD")) and "UP" not in symbol and "DOWN" not in symbol:
+                usdt_pairs.append(item)
+        
+        # ترتيب حسب الأكثر ربحاً
+        sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x['priceChangePercent']), reverse=True)
+        return [x['symbol'] for x in sorted_pairs[:SCAN_LIMIT]]
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
+        return []
+
+def get_market_data(symbol):
+    # 🇺🇸 أيضاً هنا نستخدم الرابط الأمريكي
+    url = f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={TIMEFRAME}&limit=21"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200: return resp.json()
+    except: pass
+    return []
 
 def run_scanner():
-    print("🚀 Scanner Thread Started...")
+    print(f"🇺🇸 SomaScanner US Edition Started...")
     
-    # تأخير بسيط لضمان تشغيل السيرفر أولاً
-    time.sleep(5)
-    
+    # رسالة ترحيبية للتأكد من العمل
+    test_signal = {
+        "symbol": "SYSTEM-READY",
+        "price": 1.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "NOW"
+    }
+    signals_history.append(test_signal)
+
     while True:
         try:
-            # سنجرب عملة واحدة فقط ومضمونة (BTC) لنرى هل الاتصال يعمل
-            test_coin = "BTCUSDT"
-            candles = get_market_data(test_coin)
+            dynamic_symbols = get_top_gainers()
             
-            if candles:
-                current_price = float(candles[-1][4])
+            if dynamic_symbols:
+                print(f"Found {len(dynamic_symbols)} coins...") # للمراقبة في السجلات
                 
-                # إضافة إشارة حقيقية من السوق (BTC)
-                signal_data = {
-                    "symbol": "BTC-LIVE",
-                    "price": current_price,
-                    "tp1": current_price * 1.01,
-                    "tp2": current_price * 1.02,
-                    "sl": current_price * 0.99,
-                    "vol": 99.0,
-                    "time": datetime.now().strftime("%H:%M")
-                }
-                
-                # تحديث القائمة (نحذف إشارة الاختبار ونضع الحقيقية)
-                # نبحث هل BTC موجودة؟
-                exists = any(d['symbol'] == "BTC-LIVE" for d in signals_history)
-                if not exists:
-                    signals_history.insert(0, signal_data)
+                for symbol in dynamic_symbols:
+                    candles = get_market_data(symbol)
+                    
+                    if candles and len(candles) > 20:
+                        current_candle = candles[-1]
+                        close_price = float(current_candle[4])
+                        open_price = float(current_candle[1])
+                        current_volume = float(current_candle[5])
+                        
+                        # حساب الفوليوم
+                        past_volumes = [float(c[5]) for c in candles[:-1]]
+                        if len(past_volumes) > 0:
+                            avg_volume = sum(past_volumes) / len(past_volumes)
+                        else:
+                            avg_volume = 1.0
+                            
+                        vol_strength = current_volume / avg_volume if avg_volume > 0 else 0
+                        
+                        # الشروط (مخففة قليلاً)
+                        is_whale = current_volume > (avg_volume * VOLUME_MULTIPLIER)
+                        
+                        # الشرط الأهم: أن تكون العملة رابحة اليوم
+                        price_change_pct = ((close_price - open_price) / open_price) * 100
+                        is_pump = price_change_pct > 0.5 
+
+                        if is_whale and is_pump:
+                            signal_data = {
+                                "symbol": symbol.replace("USD", ""), # تنظيف الاسم
+                                "price": close_price,
+                                "tp1": close_price * 1.02,
+                                "tp2": close_price * 1.05,
+                                "sl": close_price * 0.98,
+                                "vol": round(vol_strength, 1),
+                                "time": datetime.now().strftime("%H:%M")
+                            }
+                            
+                            # منع التكرار
+                            exists = any(d['symbol'] == signal_data['symbol'] for d in signals_history)
+                            if not exists:
+                                signals_history.insert(0, signal_data)
+                                if len(signals_history) > 20: signals_history.pop()
+                                print(f"🚀 Signal Found: {symbol}")
+
+                    time.sleep(0.1) # سرعة الفحص
             
             else:
-                # إذا فشل جلب البيانات، أضف رسالة خطأ للقائمة
-                err_signal = {
-                    "symbol": "API-ERROR",
-                    "price": 0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "FAIL"
-                }
-                if not any(d['symbol'] == "API-ERROR" for d in signals_history):
-                    signals_history.insert(0, err_signal)
+                print("⚠️ List empty (Check US API)")
 
-            time.sleep(10) # فحص كل 10 ثواني
-            
+            time.sleep(15)
         except Exception as e:
-            # إذا انهار الكود، سجل الخطأ في القائمة لنراه في التطبيق
-            error_msg = str(e)[:10] # نأخذ أول 10 حروف من الخطأ
-            crash_signal = {
-                "symbol": f"CRASH: {error_msg}",
-                "price": 0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "BUG"
-            }
-            if not any(d['time'] == "BUG" for d in signals_history):
-                signals_history.insert(0, crash_signal)
+            print(f"Loop Error: {e}")
             time.sleep(10)
 
-# تشغيل الخيط
 t = threading.Thread(target=run_scanner)
 t.start()
 
