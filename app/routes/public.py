@@ -32,7 +32,7 @@ def product_page(product_id):
         error_trace = traceback.format_exc()
         return f"System Error: {str(e)}", 500
 
-# --- مسار جديد: استقبال الطلب من الاستمارة (Form Order) ---
+# --- مسار استقبال الطلب من الاستمارة (Form Order) ---
 @public_bp.route('/api/order/new', methods=['POST'])
 def new_order_api():
     try:
@@ -43,26 +43,26 @@ def new_order_api():
             return jsonify({"success": False, "msg": "يرجى إدخال الهاتف والولاية"}), 400
 
         new_order = {
-            "merchant_id": "admin_1", # في المستقبل سيكون ديناميكياً
+            "merchant_id": "admin_1",
             "product_id": data.get('product_id'),
             "product_name": data.get('product_name'),
             "customer_name": data.get('name'),
             "customer_phone": data.get('phone'),
             "customer_wilaya": data.get('wilaya'),
-            "customer_commune": data.get('commune'), # البلدية
+            "customer_commune": data.get('commune'),
             "quantity": data.get('quantity', 1),
             "variant_color": data.get('color'),
             "variant_size": data.get('size'),
             "total_price": data.get('total_price'),
-            "status": "pending", # قيد المراجعة
-            "source": "form", # لتمييز الطلب (جاء من الاستمارة وليس الشات)
+            "status": "pending",
+            "source": "form",
             "created_at": datetime.datetime.utcnow()
         }
         
         # حفظ الطلب
         db.orders.insert_one(new_order)
         
-        # تسجيل النشاط في Live Feed
+        # تسجيل النشاط
         db.activity_logs.insert_one({
             "type": "order",
             "bot_name": "System",
@@ -71,19 +71,19 @@ def new_order_api():
             "timestamp": datetime.datetime.utcnow()
         })
 
-
-send_order_notification(new_order)
+        # ✅ التصحيح هنا: أضفنا try قبل محاولة الإرسال
+        try:
+            send_order_notification(new_order)
         except Exception as email_error:
             # نطبع الخطأ في الكونسول فقط لكي لا يتوقف طلب الزبون
             print(f"⚠️ Email Warning: {email_error}")
         
-
         return jsonify({"success": True, "msg": "تم استلام طلبك بنجاح!"})
 
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)}), 500
 
-# --- مسار الشات (موجود سابقاً) ---
+# --- مسار الشات ---
 @public_bp.route('/api/chat', methods=['POST'])
 def chat_api():
     try:
