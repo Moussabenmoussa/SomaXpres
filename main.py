@@ -5,31 +5,39 @@ import threading
 from flask import Flask, jsonify
 from datetime import datetime
 
-# ---------------- إعدادات CoinGecko ----------------
-SCAN_LIMIT = 50  # سنفحص أفضل 50 عملة عالمياً
-# --------------------------------------------------
+# ---------------- إعدادات البوت الكاملة ----------------
+BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
+CHAT_ID = "1413638026"
+SCAN_LIMIT = 50  # فحص أفضل 50 عملة عالمياً
+# -----------------------------------------------------
 
 app = Flask(__name__)
-# 👇 هذه الإشارة ستظهر لك فوراً لتتأكد أن التطبيق متصل
-signals_history = [
-    {
-        "symbol": "APP-CONNECTED",
-        "price": 100.0, "tp1": 102.0, "tp2": 105.0, "sl": 98.0, 
-        "vol": 99.9, 
-        "time": "NOW"
-    }
-]
+signals_history = []
+
+# إشارة ترحيبية تظهر في التطبيق فوراً عند التشغيل
+signals_history.append({
+    "symbol": "SYSTEM-ONLINE",
+    "price": 0.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 100, "time": "NOW"
+})
 
 @app.route('/')
 def home():
-    return "✅ SomaScanner (Gecko Edition) is Running!"
+    return "✅ SomaScanner Ultimate is Running (Telegram + App + Gecko)!"
 
 @app.route('/api/signals')
 def get_signals():
+    # هذا الرابط للتطبيق
     return jsonify(signals_history)
 
+def send_telegram_alert(message):
+    # وظيفة التليجرام (تمت إعادتها)
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try: requests.post(url, json=payload, timeout=10)
+    except Exception as e: print(f"Telegram Error: {e}")
+
 def get_coingecko_data():
-    # جلب البيانات من السوق العالمي
+    # جلب البيانات من السوق العالمي (CoinGecko)
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
         "vs_currency": "usd",
@@ -39,67 +47,89 @@ def get_coingecko_data():
         "sparkline": "false",
         "price_change_percentage": "1h"
     }
-    
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, params=params, headers=headers, timeout=10)
-        if resp.status_code == 200:
-            return resp.json()
-        else:
-            print(f"⚠️ Gecko Error: {resp.status_code}")
+        if resp.status_code == 200: return resp.json()
+        else: 
+            print(f"⚠️ API Status: {resp.status_code}")
             return []
     except Exception as e:
         print(f"❌ Connection Error: {e}")
         return []
 
 def run_scanner():
-    print("🦎 SomaScanner Gecko Edition Started...")
+    print("🚀 SomaScanner Ultimate Started...")
+    # إرسال رسالة تفعيل للتليجرام
+    send_telegram_alert("✅ **تم تشغيل النظام بالكامل!**\n(App + Telegram + CoinGecko)")
     
     while True:
         try:
             coins = get_coingecko_data()
-            
             if coins:
-                print(f"🔍 Scanned {len(coins)} coins globally...")
+                print(f"🔍 Checking {len(coins)} coins...")
                 
                 for coin in coins:
                     symbol = coin['symbol'].upper()
                     current_price = coin['current_price']
                     
-                    # نأخذ نسبة التغير في آخر ساعة
+                    # نسبة التغير في آخر ساعة
                     price_change_1h = coin.get('price_change_percentage_1h_in_currency')
-                    if price_change_1h is None: price_change_1h = 0.0
                     
-                    # الشرط: أي ارتفاع إيجابي (ولو بسيط) سنعرضه للتجربة
-                    is_pump = float(price_change_1h) > 0.5 
+                    # معالجة القيم الفارغة
+                    if price_change_1h is None: price_change_1h = 0.0
+                    else: price_change_1h = float(price_change_1h)
+                    
+                    # 🔥 الشرط: ارتفاع أكثر من 0.5% في الساعة الأخيرة (يمكنك تعديله)
+                    is_pump = price_change_1h > 0.5 
                     
                     if is_pump:
+                        # حساب الأهداف
+                        tp1 = current_price * 1.02
+                        tp2 = current_price * 1.05
+                        sl = current_price * 0.98
+                        
                         signal_data = {
-                            "symbol": f"{symbol}",
+                            "symbol": symbol,
                             "price": current_price,
-                            "tp1": current_price * 1.02,
-                            "tp2": current_price * 1.05,
-                            "sl": current_price * 0.98,
-                            "vol": round(float(price_change_1h), 1), # نعرض نسبة الارتفاع
+                            "tp1": tp1, "tp2": tp2, "sl": sl,
+                            "vol": round(price_change_1h, 1),
                             "time": datetime.now().strftime("%H:%M")
                         }
                         
-                        # إضافة للقائمة ومنع التكرار
-                        exists = any(d['symbol'] == signal_data['symbol'] for d in signals_history)
+                        # التأكد من عدم تكرار الإشارة لنفس العملة
+                        exists = any(d['symbol'] == symbol for d in signals_history)
+                        
                         if not exists:
+                            # 1. التحديث للتطبيق (API)
                             signals_history.insert(0, signal_data)
-                            # حذف إشارة الاختبار القديمة
-                            if len(signals_history) > 0 and signals_history[-1]['symbol'] == "APP-CONNECTED":
-                                signals_history.pop()
                             if len(signals_history) > 30: signals_history.pop()
-                            print(f"🚀 Signal Found: {symbol}")
+                            
+                            # حذف رسالة النظام الافتراضية إذا وجدت إشارة حقيقية
+                            if len(signals_history) > 1 and signals_history[-1]['symbol'] == "SYSTEM-ONLINE":
+                                signals_history.pop()
+
+                            # 2. الإرسال للتليجرام 🔔
+                            msg = f"""
+🚀 **فرصة جديدة (Global)**
+💎 العملة: #{symbol}
+📈 الارتفاع: {price_change_1h:.2f}% (1h)
+💰 السعر: {current_price}$
+
+🎯 **أهداف:** {tp1:.4f} - {tp2:.4f}
+🛡️ **وقف:** {sl:.4f}
+                            """
+                            send_telegram_alert(msg)
+                            print(f"🔔 Signal Sent: {symbol}")
             
-            time.sleep(45) # كوين جيكو يحتاج راحة أطول قليلاً
+            # استراحة 45 ثانية (كوين جيكو يحتاج هذا الوقت)
+            time.sleep(45)
             
         except Exception as e:
             print(f"Loop Error: {e}")
             time.sleep(10)
 
+# تشغيل البوت في الخلفية
 t = threading.Thread(target=run_scanner)
 t.start()
 
