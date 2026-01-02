@@ -9,6 +9,7 @@ auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
+    # إذا كان مسجلاً بالفعل، نوجهه للوحة التحكم
     if 'user_id' in session:
         return redirect(url_for('dashboard.index'))
 
@@ -19,11 +20,13 @@ def login():
         user = db.users.find_one({"email": email})
         
         if user and check_password_hash(user['password'], password):
+            # منع الدخول إذا لم يفعل الحساب
             if user.get('status') == 'pending':
                 flash('يرجى تفعيل حسابك أولاً', 'warning')
                 session['pending_email'] = email
                 return redirect(url_for('auth.verify'))
                 
+            # تسجيل الدخول ناجح
             session['user_id'] = str(user['_id'])
             session['store_name'] = user.get('store_name')
             return redirect(url_for('dashboard.index'))
@@ -39,28 +42,25 @@ def signup():
         email = request.form.get('email').lower().strip()
         password = request.form.get('password')
         
-        # 1. التحقق من وجود المستخدم
         if db.users.find_one({"email": email}):
             flash('هذا البريد مسجل مسبقاً', 'error')
             return redirect(url_for('auth.login'))
             
-        # 2. إنشاء كود التفعيل
         otp_code = str(random.randint(100000, 999999))
         
-        # 3. حفظ المستخدم (غير مفعل)
         new_user = {
             "store_name": store_name,
             "email": email,
             "password": generate_password_hash(password),
-            "status": "pending", # أهم حقل
+            "status": "pending",
             "otp_code": otp_code,
             "created_at": datetime.datetime.utcnow()
         }
         db.users.insert_one(new_user)
         
-        # 4. إرسال الكود وتوجيه للتحقق
+        # إرسال الكود
         send_verification_code(email, otp_code)
-        session['pending_email'] = email # نحفظ الايميل مؤقتاً للتحقق
+        session['pending_email'] = email
         
         flash('تم إرسال رمز التفعيل إلى بريدك', 'success')
         return redirect(url_for('auth.verify'))
@@ -79,17 +79,12 @@ def verify():
         user = db.users.find_one({"email": email})
         
         if user and user.get('otp_code') == code:
-            # تفعيل الحساب
             db.users.update_one({"email": email}, {"$set": {"status": "active", "otp_code": None}})
-            
-            # تسجيل الدخول فوراً
             session['user_id'] = str(user['_id'])
             session.pop('pending_email', None)
-            
-            flash('تم تفعيل حسابك بنجاح!', 'success')
             return redirect(url_for('dashboard.index'))
         else:
-            flash('الرمز غير صحيح، حاول مرة أخرى', 'error')
+            flash('الرمز غير صحيح', 'error')
             
     return render_template('auth/verify.html')
 
