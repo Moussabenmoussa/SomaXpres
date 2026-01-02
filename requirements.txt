@@ -1,7 +1,0 @@
-Flask
-pymongo
-groq
-python-dotenv
-gunicorn
-dnspython
-requests
