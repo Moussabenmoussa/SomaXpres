@@ -71,6 +71,13 @@ def new_order_api():
             "timestamp": datetime.datetime.utcnow()
         })
 
+
+send_order_notification(new_order)
+        except Exception as email_error:
+            # نطبع الخطأ في الكونسول فقط لكي لا يتوقف طلب الزبون
+            print(f"⚠️ Email Warning: {email_error}")
+        
+
         return jsonify({"success": True, "msg": "تم استلام طلبك بنجاح!"})
 
     except Exception as e:
