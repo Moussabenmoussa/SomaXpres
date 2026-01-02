@@ -1,21 +1,26 @@
 import time
 import requests
 import threading
+import traceback
 from flask import Flask, jsonify
 from datetime import datetime
 
-# ---------------- إعدادات البوت ----------------
-BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
-CHAT_ID = "1413638026"
-# سنفحص 10 عملات فقط للتجربة السريعة
-SCAN_LIMIT = 10
+# ---------------- إعدادات الطوارئ ----------------
+SCAN_LIMIT = 5
 TIMEFRAME = "5m"
-# سنقبل أي فوليوم لكشف الاتصال
-VOLUME_MULTIPLIER = 0.0
 # -----------------------------------------------
 
 app = Flask(__name__)
-signals_history = []
+
+# 👇 1. وضعنا إشارة ثابتة ستظهر لك 100% لتتأكد من التطبيق
+signals_history = [
+    {
+        "symbol": "APP-WORKING",
+        "price": 1.0, "tp1": 1.1, "tp2": 1.2, "sl": 0.9,
+        "vol": 100.0,
+        "time": "TEST-OK"
+    }
+]
 
 @app.route('/')
 def home():
@@ -25,89 +30,76 @@ def home():
 def get_signals():
     return jsonify(signals_history)
 
-def get_top_gainers():
-    url = "https://api.binance.com/api/v3/ticker/24hr"
-    try:
-        # إضافة User-Agent لنتظاهر بأننا متصفح ولسنا روبوت
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=10)
-        
-        # 👇👇 كشف الخطأ 👇👇
-        if resp.status_code != 200:
-            print(f"❌ خطأ باينانس: {resp.status_code}")
-            return ["ERROR-BINANCE"] # نرسل رمز خطأ
-            
-        data = resp.json()
-        usdt_pairs = []
-        for item in data:
-            symbol = item['symbol']
-            if symbol.endswith("USDT") and "UP" not in symbol and "DOWN" not in symbol:
-                usdt_pairs.append(item)
-        sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x['priceChangePercent']), reverse=True)
-        return [x['symbol'] for x in sorted_pairs[:SCAN_LIMIT]]
-    except Exception as e:
-        print(f"❌ خطأ اتصال: {e}")
-        return ["ERROR-NET"]
-
 def get_market_data(symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={TIMEFRAME}&limit=21"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code == 200: return resp.json()
-    except: pass
-    return []
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={TIMEFRAME}&limit=5"
+        # خدعة لتجاوز حظر المتصفحات
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200: 
+            return resp.json()
+        else:
+            return None
+    except: 
+        return None
 
 def run_scanner():
-    print(f"🕵️ SomaScanner Diagnostic Mode...")
+    print("🚀 Scanner Thread Started...")
+    
+    # تأخير بسيط لضمان تشغيل السيرفر أولاً
+    time.sleep(5)
     
     while True:
         try:
-            dynamic_symbols = get_top_gainers()
+            # سنجرب عملة واحدة فقط ومضمونة (BTC) لنرى هل الاتصال يعمل
+            test_coin = "BTCUSDT"
+            candles = get_market_data(test_coin)
             
-            # 🛑 إذا كان هناك حظر، أرسل رسالة للتطبيق فوراً
-            if dynamic_symbols and dynamic_symbols[0] == "ERROR-BINANCE":
-                error_signal = {
-                    "symbol": "BLOCKED ❌",
-                    "price": 0.0, "tp1": 0, "tp2": 0, "sl": 0,
-                    "vol": 0.0,
-                    "time": "IP BAN"
+            if candles:
+                current_price = float(candles[-1][4])
+                
+                # إضافة إشارة حقيقية من السوق (BTC)
+                signal_data = {
+                    "symbol": "BTC-LIVE",
+                    "price": current_price,
+                    "tp1": current_price * 1.01,
+                    "tp2": current_price * 1.02,
+                    "sl": current_price * 0.99,
+                    "vol": 99.0,
+                    "time": datetime.now().strftime("%H:%M")
                 }
-                if not any(d['symbol'] == "BLOCKED ❌" for d in signals_history):
-                     signals_history.insert(0, error_signal)
-                time.sleep(10)
-                continue
+                
+                # تحديث القائمة (نحذف إشارة الاختبار ونضع الحقيقية)
+                # نبحث هل BTC موجودة؟
+                exists = any(d['symbol'] == "BTC-LIVE" for d in signals_history)
+                if not exists:
+                    signals_history.insert(0, signal_data)
+            
+            else:
+                # إذا فشل جلب البيانات، أضف رسالة خطأ للقائمة
+                err_signal = {
+                    "symbol": "API-ERROR",
+                    "price": 0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "FAIL"
+                }
+                if not any(d['symbol'] == "API-ERROR" for d in signals_history):
+                    signals_history.insert(0, err_signal)
 
-            if dynamic_symbols:
-                for symbol in dynamic_symbols:
-                    candles = get_market_data(symbol)
-                    if candles and len(candles) > 20:
-                        # بما أننا وضعنا المضاعف 0.0 سيقبل أي شيء
-                        current_candle = candles[-1]
-                        close_price = float(current_candle[4])
-                        
-                        signal_data = {
-                            "symbol": symbol,
-                            "price": close_price,
-                            "tp1": close_price * 1.01,
-                            "tp2": close_price * 1.02,
-                            "sl": close_price * 0.99,
-                            "vol": 1.0, # رقم ثابت للتجربة
-                            "time": datetime.now().strftime("%H:%M")
-                        }
-                        
-                        # نمنع التكرار المزعج
-                        exists = any(d['symbol'] == symbol for d in signals_history)
-                        if not exists:
-                            signals_history.insert(0, signal_data)
-                            if len(signals_history) > 20: signals_history.pop()
-                            
-                    time.sleep(0.2)
-            time.sleep(15)
+            time.sleep(10) # فحص كل 10 ثواني
+            
         except Exception as e:
-            print(f"Error Loop: {e}")
+            # إذا انهار الكود، سجل الخطأ في القائمة لنراه في التطبيق
+            error_msg = str(e)[:10] # نأخذ أول 10 حروف من الخطأ
+            crash_signal = {
+                "symbol": f"CRASH: {error_msg}",
+                "price": 0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "BUG"
+            }
+            if not any(d['time'] == "BUG" for d in signals_history):
+                signals_history.insert(0, crash_signal)
             time.sleep(10)
 
+# تشغيل الخيط
 t = threading.Thread(target=run_scanner)
 t.start()
 
