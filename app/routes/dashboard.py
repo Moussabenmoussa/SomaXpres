@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from app import db
 import datetime
-
+import json 
 dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/')
@@ -52,33 +52,61 @@ def index():
                            my_products=my_products,
                            recent_activities=recent_activities) # تمرير النشاطات
 
+
 @dashboard_bp.route('/products/new', methods=['GET', 'POST'])
 def add_product():
     if request.method == 'POST':
         try:
+            # البيانات الأساسية
             name = request.form.get('name')
             price = float(request.form.get('price'))
-            currency = request.form.get('currency', '$')
+            old_price = request.form.get('old_price') # قد يكون فارغاً
             description = request.form.get('description')
-            product_type = request.form.get('product_type')
-            image_url = request.form.get('image_url')
-            bot_name = request.form.get('bot_name')
+            
+            # الصور (تأتي كسلسلة نصية JSON من الجافاسكريبت)
+            images_json = request.form.get('images_list')
+            images = json.loads(images_json) if images_json else []
+            
+            # المتغيرات (Colors & Sizes)
+            colors_str = request.form.get('colors', '')
+            sizes_str = request.form.get('sizes', '')
+            
+            colors = [c.strip() for c in colors_str.split(',') if c.strip()]
+            sizes = [s.strip() for s in sizes_str.split(',') if s.strip()]
+            
+            # العروض والكوبونات
+            offer_end_time = request.form.get('offer_end_time')
+            coupon_value = request.form.get('coupon_value')
+            coupon_code = request.form.get('coupon_code')
+            
+            # الذكاء الاصطناعي
             ai_instructions = request.form.get('ai_instructions')
             
             new_product = {
                 "merchant_id": "admin_1", 
                 "name": name,
                 "price": price,
-                "currency_symbol": currency,
+                "old_price": float(old_price) if old_price else None,
+                "currency_symbol": "دج", # افتراضي
                 "description": description,
-                "product_type": product_type,
-                "images": [image_url] if image_url else [],
-                "bot_name": bot_name,
+                "product_type": "physical", # افتراضي للمنتجات الملموسة
+                "images": images, # قائمة الصور
+                "colors": colors, # قائمة الألوان
+                "sizes": sizes,   # قائمة المقاسات
+                "offer_end_time": offer_end_time, # تاريخ انتهاء العرض
+                "coupon": {
+                    "code": coupon_code,
+                    "value": coupon_value
+                } if coupon_code else None,
                 "ai_instructions": ai_instructions,
                 "created_at": datetime.datetime.utcnow(),
                 "views": 0,
-                "orders_count": 0
+                "orders_count": 0,
+                # إعدادات وهمية للبداية (Social Proof)
+                "rating": 4.8, 
+                "sales_count": 120 + int(datetime.datetime.now().timestamp() % 50) # رقم عشوائي للمبيعات
             }
+            
             db.products.insert_one(new_product)
             return redirect(url_for('dashboard.index'))
         except Exception as e:
