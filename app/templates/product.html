@@ -1,182 +1,389 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ product.name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{ product.name }} | عرض خاص</title>
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    
+    <!-- Swiper CSS (للسلايدر) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
     <style>
-        body { font-family: 'Inter', 'Cairo', sans-serif; background-color: #FAFAFA; }
-        .chat-bubble { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-        .user-msg { background-color: #000; color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .ai-msg { background-color: #ffffff; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #e5e7eb; }
-        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
-        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-        /* تحسين التمرير */
-        #messages::-webkit-scrollbar { width: 6px; }
-        #messages::-webkit-scrollbar-thumb { background-color: #e5e7eb; border-radius: 10px; }
+        body { font-family: 'Cairo', sans-serif; background-color: #f2f2f2; padding-bottom: 80px; }
+        
+        /* Swiper Customization */
+        .swiper { width: 100%; height: 350px; background: white; }
+        .swiper-slide img { width: 100%; height: 100%; object-fit: contain; }
+        
+        /* Variants Buttons */
+        .variant-btn { border: 1px solid #e5e7eb; padding: 6px 12px; border-radius: 8px; font-size: 13px; transition: all 0.2s; }
+        .variant-btn.active { border-color: #dc2626; color: #dc2626; background-color: #fef2f2; font-weight: bold; }
+        
+        /* Bottom Bar */
+        .sticky-bar { box-shadow: 0 -4px 10px rgba(0,0,0,0.05); }
+
+        /* Chat Animations */
+        .chat-bubble { max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 14px; margin-bottom: 8px; }
+        .user-msg { background: #000; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .ai-msg { background: #fff; border: 1px solid #e5e7eb; align-self: flex-start; border-bottom-left-radius: 2px; }
     </style>
 </head>
-<body class="pb-24 antialiased">
+<body class="antialiased">
 
-    <!-- Product Image Slider -->
-    <div class="w-full h-[50vh] bg-gray-100 overflow-hidden relative shadow-sm">
-        {% if product.images %}
-        <img src="{{ product.images[0] }}" class="w-full h-full object-cover object-center" alt="{{ product.name }}">
-        {% else %}
-        <div class="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">No Image</div>
-        {% endif %}
+    <!-- 1. Header (Simple) -->
+    <div class="fixed top-0 w-full bg-white/90 backdrop-blur z-40 px-4 py-3 shadow-sm flex justify-between items-center">
+        <a href="javascript:history.back()" class="p-2 bg-gray-100 rounded-full"><i data-lucide="arrow-right" class="w-5 h-5"></i></a>
+        <span class="font-bold text-sm truncate w-48 text-center">{{ product.name }}</span>
+        <button class="p-2 bg-gray-100 rounded-full"><i data-lucide="share-2" class="w-5 h-5"></i></button>
+    </div>
+
+    <!-- 2. Image Slider -->
+    <div class="mt-14 relative bg-white">
+        <div class="swiper mySwiper">
+            <div class="swiper-wrapper">
+                <!-- إذا لم توجد صور، نضع صورة افتراضية -->
+                {% if product.images %}
+                    {% for img in product.images %}
+                    <div class="swiper-slide"><img src="{{ img }}" alt="Product Image"></div>
+                    {% endfor %}
+                {% else %}
+                    <div class="swiper-slide"><img src="https://via.placeholder.com/600x600?text=No+Image" alt="No Image"></div>
+                {% endif %}
+            </div>
+            <div class="swiper-pagination"></div>
+        </div>
         
-        <!-- Badge -->
-        <div class="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-gray-900 shadow-sm uppercase tracking-wider">
-            {{ product.product_type }}
+        <!-- Flash Sale Timer (Only if date exists) -->
+        {% if product.offer_end_time %}
+        <div class="bg-gradient-to-r from-red-600 to-orange-500 text-white p-3 flex justify-between items-center" id="flashSaleBar">
+            <div class="flex items-center gap-2">
+                <i data-lucide="zap" class="w-5 h-5 fill-yellow-300 text-yellow-300"></i>
+                <span class="font-bold text-sm">عرض محدود (Flash Sale)</span>
+            </div>
+            <div class="flex gap-1 text-xs font-mono font-bold" id="countdown">
+                <span class="bg-white text-red-600 px-1 rounded" id="hours">00</span>:
+                <span class="bg-white text-red-600 px-1 rounded" id="mins">00</span>:
+                <span class="bg-white text-red-600 px-1 rounded" id="secs">00</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 3. Product Info -->
+    <div class="bg-white p-4 mb-2">
+        <div class="flex justify-between items-start mb-2">
+            <h1 class="text-lg font-bold text-gray-900 leading-snug">{{ product.name }}</h1>
+        </div>
+        
+        <div class="flex items-end gap-2 mb-2">
+            <span class="text-3xl font-black text-red-600">{{ product.price }}<span class="text-sm font-medium text-gray-500 ml-1">دج</span></span>
+            {% if product.old_price %}
+            <span class="text-gray-400 line-through text-sm mb-1">{{ product.old_price }} دج</span>
+            <span class="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded font-bold mb-1">-{{ ((1 - product.price/product.old_price)*100)|int }}%</span>
+            {% endif %}
+        </div>
+
+        <!-- Fake Social Proof -->
+        <div class="flex items-center gap-2 text-xs text-gray-500 border-t pt-3 mt-2 border-gray-100">
+            <div class="flex items-center text-yellow-400">
+                <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                <span class="text-gray-700 font-bold ml-1">4.8</span>
+            </div>
+            <span>•</span>
+            <span>{{ product.sales_count or '120' }} طلب</span>
+            <span>•</span>
+            <span class="text-green-600 font-medium">توصيل 58 ولاية</span>
         </div>
     </div>
 
-    <!-- Product Info -->
-    <div class="max-w-xl mx-auto px-5 py-8 -mt-6 relative z-10 bg-white rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.03)] min-h-[50vh]">
-        <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
-        
-        <h1 class="text-2xl font-bold text-gray-900 mb-2 leading-tight">{{ product.name }}</h1>
-        
-        <div class="flex items-baseline gap-2 mb-6">
-            <span class="text-3xl font-extrabold text-gray-900">{{ product.price }} <span class="text-lg font-medium text-gray-500">{{ product.currency_symbol }}</span></span>
+    <!-- 4. Coupon (If exists) -->
+    {% if product.coupon %}
+    <div class="bg-white p-4 mb-2 flex items-center justify-between cursor-pointer" onclick="copyCoupon('{{ product.coupon.code }}')">
+        <div class="flex items-center gap-3">
+            <div class="bg-orange-100 text-orange-600 p-2 rounded-lg"><i data-lucide="ticket" class="w-5 h-5"></i></div>
+            <div>
+                <p class="text-sm font-bold">كوبون خصم: <span class="text-red-600">{{ product.coupon.value }} دج</span></p>
+                <p class="text-xs text-gray-500">استخدم الكود: {{ product.coupon.code }}</p>
+            </div>
         </div>
+        <button class="text-xs bg-red-600 text-white px-3 py-1.5 rounded-full font-bold">نسخ</button>
+    </div>
+    {% endif %}
 
-        <!-- Description -->
-        <div class="prose prose-sm text-gray-600 leading-relaxed mb-8">
+    <!-- 5. Variants Selection -->
+    <div class="bg-white p-4 mb-2 space-y-4">
+        <!-- Colors -->
+        {% if product.colors and product.colors|length > 0 %}
+        <div>
+            <p class="text-xs font-bold text-gray-500 mb-2">اللون:</p>
+            <div class="flex flex-wrap gap-2">
+                {% for color in product.colors %}
+                <button type="button" class="variant-btn color-opt" onclick="selectVariant('color', this, '{{color}}')">{{ color }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Sizes -->
+        {% if product.sizes and product.sizes|length > 0 %}
+        <div>
+            <p class="text-xs font-bold text-gray-500 mb-2">المقاس:</p>
+            <div class="flex flex-wrap gap-2">
+                {% for size in product.sizes %}
+                <button type="button" class="variant-btn size-opt" onclick="selectVariant('size', this, '{{size}}')">{{ size }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 6. Description -->
+    <div class="bg-white p-4 mb-2">
+        <h3 class="font-bold text-sm mb-2 border-b pb-2">وصف المنتج</h3>
+        <div class="prose prose-sm text-gray-600 text-sm leading-relaxed whitespace-pre-line">
             {{ product.description }}
         </div>
-
-        <!-- Trust Badges -->
-        <div class="grid grid-cols-3 gap-4 border-t border-gray-100 py-6">
-            <div class="text-center">
-                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🛡️</div>
-                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Guaranteed</div>
-            </div>
-            <div class="text-center">
-                <div class="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🚀</div>
-                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Fast Delivery</div>
-            </div>
-            <div class="text-center">
-                <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">⭐</div>
-                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wide">Top Rated</div>
-            </div>
-        </div>
     </div>
 
-    <!-- Sticky Bottom Bar -->
-    <div class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-6 z-40 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <div class="flex flex-col">
-            <span class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Total Price</span>
-            <span class="font-bold text-xl text-gray-900">{{ product.price }}{{ product.currency_symbol }}</span>
-        </div>
-        <button onclick="toggleChat()" class="bg-black text-white px-8 py-3.5 rounded-full font-bold shadow-xl active:scale-95 transition-transform flex items-center gap-2 hover:bg-gray-900">
-            <span>Buy Now</span>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" /></svg>
+    <!-- 7. Sticky Bottom Action Bar -->
+    <div class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 p-3 z-50 sticky-bar flex gap-3 items-center">
+        
+        <!-- AI Chat Button (Small) -->
+        <button onclick="toggleChat()" class="flex flex-col items-center justify-center gap-1 text-gray-500 w-16 relative">
+            <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center relative">
+                <i data-lucide="message-circle" class="w-5 h-5"></i>
+                <span class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
+            </div>
+            <span class="text-[10px] font-medium">استفسار</span>
+        </button>
+
+        <!-- Buy Button (Big) -->
+        <button onclick="scrollToOrder()" class="flex-1 bg-red-600 text-white h-12 rounded-full font-bold shadow-lg shadow-red-200 flex flex-col items-center justify-center leading-none active:scale-95 transition">
+            <span class="text-sm">اشتري الآن</span>
+            <span class="text-[10px] opacity-80 font-normal">الدفع عند الاستلام</span>
         </button>
     </div>
 
-    <!-- Chat Interface -->
-    <div id="chatWidget" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm transition-opacity duration-300 opacity-0">
-        <div class="absolute bottom-0 w-full md:max-w-md md:left-1/2 md:-translate-x-1/2 h-[90vh] bg-[#F3F4F6] rounded-t-3xl shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 transform translate-y-full" id="chatContainer">
+    <!-- 8. Order Form Modal (Bottom Sheet style) -->
+    <div id="orderModal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeOrderModal()"></div>
+        <div class="absolute bottom-0 w-full bg-white rounded-t-3xl p-5 animate-slideUp transition-transform">
+            <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
             
-            <!-- Header -->
-            <div class="bg-white p-4 flex justify-between items-center shadow-sm z-10">
+            <h3 class="text-lg font-bold text-center mb-4">تأكيد الطلب</h3>
+            
+            <form id="orderForm" onsubmit="submitOrder(event)" class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="text" id="custName" placeholder="الاسم الكامل" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-red-500">
+                    <input type="tel" id="custPhone" placeholder="رقم الهاتف" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-red-500 text-left" dir="ltr">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- Wilaya Select (Simple List for MVP) -->
+                    <select id="custWilaya" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-red-500">
+                        <option value="" selected disabled>اختر الولاية</option>
+                        <option value="Alger">Alger (الجزائر)</option>
+                        <option value="Oran">Oran (وهران)</option>
+                        <option value="Constantine">Constantine (قسنطينة)</option>
+                        <option value="Sétif">Sétif (سطيف)</option>
+                        <option value="Batna">Batna (باتنة)</option>
+                        <option value="Blida">Blida (البليدة)</option>
+                        <!-- يمكن إضافة باقي الولايات لاحقاً -->
+                        <option value="Other">ولايات أخرى...</option>
+                    </select>
+                    
+                    <input type="text" id="custCommune" placeholder="البلدية" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-red-500">
+                </div>
+
+                <!-- Hidden inputs for variants -->
+                <input type="hidden" id="selectedColor">
+                <input type="hidden" id="selectedSize">
+                
+                <button type="submit" id="submitBtn" class="w-full bg-black text-white h-14 rounded-xl font-bold text-lg shadow-xl mt-2 flex items-center justify-center gap-2">
+                    <span>تأكيد الطلب</span>
+                    <i data-lucide="check-circle" class="w-5 h-5"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 9. AI Chat Modal -->
+    <div id="chatWidget" class="fixed inset-0 z-[70] hidden bg-black/50 backdrop-blur-sm">
+        <div class="absolute bottom-0 w-full h-[85vh] bg-white rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slideUp">
+            
+            <!-- Chat Header -->
+            <div class="bg-white border-b border-gray-100 p-4 flex justify-between items-center">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px]">
-                        <img src="https://ui-avatars.com/api/?name={{ product.bot_name }}&background=fff" class="w-full h-full rounded-full border-2 border-white" alt="Bot">
+                    <div class="w-10 h-10 rounded-full bg-blue-100 p-1">
+                        <img src="https://ui-avatars.com/api/?name={{ product.bot_name or 'Agent' }}&background=transparent" class="rounded-full">
                     </div>
                     <div>
-                        <h3 class="font-bold text-sm text-gray-900">{{ product.bot_name or 'Assistant' }}</h3>
-                        <p class="text-xs text-green-500 font-medium flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Active Now
-                        </p>
+                        <h3 class="font-bold text-sm">{{ product.bot_name or 'Sales Agent' }}</h3>
+                        <p class="text-[10px] text-green-500 flex items-center gap-1">● متصل الآن</p>
                     </div>
                 </div>
-                <button onclick="toggleChat()" class="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <button onclick="toggleChat()" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
 
             <!-- Messages -->
-            <div id="messages" class="flex-1 overflow-y-auto p-4 flex flex-col space-y-2 bg-[#F3F4F6]">
+            <div id="messages" class="flex-1 overflow-y-auto p-4 flex flex-col bg-gray-50">
                 <div class="ai-msg chat-bubble">
-                    مرحباً! أنا <b>{{ product.bot_name }}</b> 👋. <br>
-                    عجبك المنتج "{{ product.name }}"؟ إذا عندك أي سؤال أنا هنا، وإذا حاب تطلب خبرني برك!
+                    مرحباً! أنا هنا لمساعدتك بخصوص <b>{{ product.name }}</b>. هل لديك أي سؤال؟
                 </div>
             </div>
 
-            <!-- Input Area -->
+            <!-- Input -->
             <div class="p-4 bg-white border-t border-gray-100">
-                <form id="chatForm" class="flex gap-2 items-end">
-                    <input type="text" id="userInput" class="flex-1 bg-gray-100 border-0 rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all placeholder-gray-400" placeholder="اكتب رسالتك هنا..." autocomplete="off">
-                    <button type="submit" class="bg-black text-white w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center hover:bg-gray-800 transition active:scale-95 shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" viewBox="0 0 20 20" fill="currentColor"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
-                    </button>
+                <form id="chatForm" class="flex gap-2">
+                    <input type="text" id="userInput" class="flex-1 bg-gray-100 border-0 rounded-full px-4 py-3 text-sm outline-none" placeholder="اكتب رسالة..." autocomplete="off">
+                    <button type="submit" class="bg-blue-600 text-white w-10 h-10 rounded-full flex items-center justify-center"><i data-lucide="send" class="w-4 h-4"></i></button>
                 </form>
             </div>
         </div>
     </div>
 
+    <!-- Swiper JS -->
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
     <script>
+        lucide.createIcons();
+
+        // 1. Init Swiper Slider
+        var swiper = new Swiper(".mySwiper", {
+            pagination: { el: ".swiper-pagination", dynamicBullets: true },
+            loop: true,
+            autoplay: { delay: 3000, disableOnInteraction: false },
+        });
+
+        // 2. Variants Logic
+        function selectVariant(type, btn, value) {
+            // Remove active class from siblings
+            const container = btn.parentElement;
+            container.querySelectorAll('.variant-btn').forEach(b => b.classList.remove('active'));
+            
+            // Activate clicked button
+            btn.classList.add('active');
+            
+            // Store value
+            if(type === 'color') document.getElementById('selectedColor').value = value;
+            if(type === 'size') document.getElementById('selectedSize').value = value;
+        }
+
+        // 3. Countdown Timer (Only if time exists)
+        {% if product.offer_end_time %}
+        const endTime = new Date("{{ product.offer_end_time }}").getTime();
+        if(!isNaN(endTime)) {
+            const timerInterval = setInterval(function() {
+                const now = new Date().getTime();
+                const distance = endTime - now;
+                
+                if (distance < 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById("flashSaleBar").style.display = "none";
+                    return;
+                }
+                
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                
+                document.getElementById("hours").innerText = hours < 10 ? "0" + hours : hours;
+                document.getElementById("mins").innerText = minutes < 10 ? "0" + minutes : minutes;
+                document.getElementById("secs").innerText = seconds < 10 ? "0" + seconds : seconds;
+            }, 1000);
+        }
+        {% endif %}
+
+        // 4. Modal Logic (Order Form)
+        function scrollToOrder() {
+            document.getElementById('orderModal').classList.remove('hidden');
+        }
+        function closeOrderModal() {
+            document.getElementById('orderModal').classList.add('hidden');
+        }
+
+        // 5. Submit Order API
+        async function submitOrder(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const originalText = btn.innerHTML;
+            
+            btn.innerHTML = 'جاري المعالجة...';
+            btn.disabled = true;
+
+            const data = {
+                product_id: "{{ product._id }}",
+                product_name: "{{ product.name }}",
+                total_price: "{{ product.price }}",
+                name: document.getElementById('custName').value,
+                phone: document.getElementById('custPhone').value,
+                wilaya: document.getElementById('custWilaya').value,
+                commune: document.getElementById('custCommune').value,
+                color: document.getElementById('selectedColor').value,
+                size: document.getElementById('selectedSize').value,
+                quantity: 1 // يمكن تطويره لاحقاً
+            };
+
+            try {
+                const res = await fetch('/api/order/new', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                
+                if (result.success) {
+                    btn.innerHTML = 'تم الطلب بنجاح! ✅';
+                    btn.classList.add('bg-green-600');
+                    setTimeout(() => {
+                        closeOrderModal();
+                        alert("شكراً لك! سنتصل بك قريباً لتأكيد الطلب.");
+                    }, 1500);
+                } else {
+                    alert("خطأ: " + result.msg);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                alert("حدث خطأ في الاتصال.");
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // 6. AI Chat Logic (Integrated)
         const chatWidget = document.getElementById('chatWidget');
-        const chatContainer = document.getElementById('chatContainer');
         const messagesDiv = document.getElementById('messages');
         const chatForm = document.getElementById('chatForm');
-        const userInput = document.getElementById('userInput');
-        
         let chatHistory = [];
-        const productId = "{{ product._id }}";
 
         function toggleChat() {
-            if (chatWidget.classList.contains('hidden')) {
-                chatWidget.classList.remove('hidden');
-                setTimeout(() => {
-                    chatWidget.classList.remove('opacity-0');
-                    chatContainer.classList.remove('translate-y-full');
-                }, 10);
-            } else {
-                chatContainer.classList.add('translate-y-full');
-                chatWidget.classList.add('opacity-0');
-                setTimeout(() => {
-                    chatWidget.classList.add('hidden');
-                }, 300);
-            }
+            chatWidget.classList.toggle('hidden');
         }
 
         function appendMessage(role, text) {
             const div = document.createElement('div');
             div.className = `chat-bubble ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
-            div.innerHTML = text;
+            div.innerText = text;
             messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        function showTyping() {
-            const div = document.createElement('div');
-            div.id = 'typingIndicator';
-            div.className = 'ai-msg chat-bubble flex gap-1 items-center w-16';
-            div.innerHTML = `<div class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></div><div class="typing-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0.2s"></div><div class="typing-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0.4s"></div>`;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        function removeTyping() {
-            const el = document.getElementById('typingIndicator');
-            if(el) el.remove();
         }
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const text = userInput.value.trim();
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
             if (!text) return;
 
             appendMessage('user', text);
-            userInput.value = '';
-            showTyping();
+            input.value = '';
 
             try {
                 const res = await fetch('/api/chat', {
@@ -184,7 +391,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         message: text,
-                        product_id: productId,
+                        product_id: "{{ product._id }}",
                         history: chatHistory
                     })
                 });
@@ -193,14 +400,17 @@
                 chatHistory.push({role: "user", content: text});
                 chatHistory.push({role: "assistant", content: data.response});
                 
-                removeTyping();
                 appendMessage('ai', data.response);
-
             } catch (err) {
-                removeTyping();
-                appendMessage('ai', "خطأ في الاتصال، حاول مرة أخرى.");
+                appendMessage('ai', "خطأ في الاتصال.");
             }
         });
+
+        // Copy Coupon
+        function copyCoupon(code) {
+            navigator.clipboard.writeText(code);
+            alert("تم نسخ الكود: " + code);
+        }
     </script>
 </body>
 </html>
