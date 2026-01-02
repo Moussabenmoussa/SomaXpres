@@ -1,7 +1,8 @@
 import time
 import requests
 import threading
-from flask import Flask
+from flask import Flask, jsonify
+from datetime import datetime
 
 # ---------------- إعدادات البوت ----------------
 BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
@@ -11,12 +12,19 @@ TIMEFRAME = "5m"
 VOLUME_MULTIPLIER = 3.0
 # -----------------------------------------------
 
-# إعداد سيرفر وهمي لإبقاء البوت مستيقظاً
 app = Flask(__name__)
+
+# 💾 ذاكرة لتخزين آخر 20 توصية للتطبيق
+signals_history = []
 
 @app.route('/')
 def home():
-    return "✅ SomaScanner Bot is Running 24/7!"
+    return "✅ SomaScanner API is Running!"
+
+# 🔗 رابط API الذي سيستخدمه تطبيق Flutter
+@app.route('/api/signals')
+def get_signals():
+    return jsonify(signals_history)
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -46,18 +54,13 @@ def get_market_data(symbol):
     except: pass
     return []
 
-# --- وظيفة البوت الرئيسية (تعمل في الخلفية) ---
 def run_scanner():
-    print(f"💎 SomaScanner VIP (Render Version) يعمل الآن...")
-    send_telegram_alert("✅ **تم تفعيل البوت على Render!** 🚀")
-    
+    print(f"💎 SomaScanner Pro (API + Telegram) يعمل الآن...")
     last_alert_times = {}
     
     while True:
         try:
-            # print("🔄") # إخفاء الطباعة لتخفيف الضغط
             dynamic_symbols = get_top_gainers()
-            
             if dynamic_symbols:
                 for symbol in dynamic_symbols:
                     candles = get_market_data(symbol)
@@ -82,9 +85,27 @@ def run_scanner():
                         
                         if is_whale and is_pump and candle_time != last_time:
                             tp1 = close_price * 1.02
+                            tp2 = close_price * 1.05
                             sl = low_price * 0.98
-                            msg = f"💎 **توصية Render VIP**\n#{symbol}\nVol: {vol_strength:.1f}x\n💰 {close_price}\n🎯 {tp1:.4f}\n🛡️ {sl:.4f}"
+                            
+                            # 1. إرسال لتيليجرام
+                            msg = f"💎 **SomaScanner**\n#{symbol}\n🚀 Vol: {vol_strength:.1f}x\n💰 {close_price}"
                             send_telegram_alert(msg)
+                            
+                            # 2. 🔥 حفظ التوصية للتطبيق (API)
+                            signal_data = {
+                                "symbol": symbol,
+                                "price": close_price,
+                                "tp1": round(tp1, 4),
+                                "tp2": round(tp2, 4),
+                                "sl": round(sl, 4),
+                                "vol": round(vol_strength, 1),
+                                "time": datetime.now().strftime("%H:%M")
+                            }
+                            # إضافة للقائمة وحذف القديم إذا تجاوزنا 20
+                            signals_history.insert(0, signal_data)
+                            if len(signals_history) > 20: signals_history.pop()
+                            
                             last_alert_times[symbol] = candle_time
                     time.sleep(0.5)
             time.sleep(15)
@@ -92,10 +113,8 @@ def run_scanner():
             print(f"Error: {e}")
             time.sleep(10)
 
-# تشغيل البوت في خيط منفصل (Thread) لكي لا يوقف السيرفر
 t = threading.Thread(target=run_scanner)
 t.start()
 
-# تشغيل السيرفر الوهمي
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
