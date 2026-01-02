@@ -165,6 +165,11 @@ def analyze_swing(symbol):
 # ==========================================
 def bot_engine():
     print("🚀 TRADOVIP Hybrid Engine Started...")
+
+send_telegram("✅ **TRADOVIP System Online**\nScanning BTC, ETH, SOL for opportunities...")
+    
+   
+
     
     while True:
         try:
