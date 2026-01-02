@@ -1,33 +1,30 @@
-
 import time
 import requests
 import threading
+import math
 from flask import Flask, jsonify
 from datetime import datetime
 
-# ---------------- إعدادات القنص (Sniper Settings) ----------------
+# ---------------- إعدادات المحلل الفني ----------------
 BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
 CHAT_ID = "1413638026"
 
-SCAN_LIMIT = 50       # فحص أعلى 50 عملة سيولة
-PUMP_THRESHOLD = 2.0  # ⚠️ رفعنا الشرط: يجب أن ترتفع 2% في ساعة واحدة
-# -----------------------------------------------------------------
-
-# 🚫 قائمة التجاهل (عملات مستقرة لا فائدة من تداولها)
-IGNORED_COINS = ['USDT', 'USDC', 'FDUSD', 'DAI', 'WBTC', 'WETH', 'STETH', 'TUSD']
+# سنفحص أهم 10 عملات فقط لأن التحليل عميق ويحتاج وقت
+TARGET_COINS = ['bitcoin', 'ethereum', 'solana', 'binancecoin', 'ripple', 'cardano', 'avalanche-2', 'dogecoin', 'polkadot', 'chainlink']
+# -----------------------------------------------------
 
 app = Flask(__name__)
 signals_history = []
 
-# إشارة النظام (للتأكد من العمل فقط)
+# إشارة النظام
 signals_history.append({
-    "symbol": "SYSTEM-READY",
-    "price": 0.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 100, "time": "NOW"
+    "symbol": "ANALYST-MODE",
+    "price": 0.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "ACTIVE"
 })
 
 @app.route('/')
 def home():
-    return "✅ SomaScanner Sniper V2 is Running!"
+    return "✅ SomaScanner Analyst Mode is Running!"
 
 @app.route('/api/signals')
 def get_signals():
@@ -39,99 +36,131 @@ def send_telegram_alert(message):
     try: requests.post(url, json=payload, timeout=10)
     except: pass
 
-def get_coingecko_data():
-    url = "https://api.coingecko.com/api/v3/coins/markets"
-    params = {
-        "vs_currency": "usd",
-        "order": "volume_desc", 
-        "per_page": SCAN_LIMIT,
-        "page": 1,
-        "sparkline": "false",
-        "price_change_percentage": "1h,24h" # نطلب بيانات 24 ساعة أيضاً للفلترة
-    }
+# --- دوال التحليل الفني (الرياضيات) ---
+
+def calculate_rsi(prices, period=14):
+    """حساب مؤشر القوة النسبية RSI يدوياً"""
+    if len(prices) < period + 1: return 50 # بيانات غير كافية
+    
+    gains = []
+    losses = []
+    
+    for i in range(1, len(prices)):
+        change = prices[i] - prices[i-1]
+        if change > 0:
+            gains.append(change)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(abs(change))
+            
+    # المتوسط الأول
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    
+    if avg_loss == 0: return 100
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    # التمهيد (Smoothed) لباقي البيانات
+    for i in range(period, len(prices)-1):
+        change = prices[i] - prices[i-1]
+        gain = change if change > 0 else 0
+        loss = abs(change) if change < 0 else 0
+        
+        avg_gain = ((avg_gain * (period - 1)) + gain) / period
+        avg_loss = ((avg_loss * (period - 1)) + loss) / period
+        
+    if avg_loss == 0: return 100
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def get_coin_candles(coin_id):
+    """جلب الشموع التاريخية من CoinGecko"""
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+    params = {"vs_currency": "usd", "days": "1"} # شموع آخر 24 ساعة (30 دقيقة)
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, params=params, headers=headers, timeout=10)
-        if resp.status_code == 200: return resp.json()
+        if resp.status_code == 200:
+            return resp.json() # يعيد مصفوفة [time, open, high, low, close]
         return []
     except: return []
 
 def run_scanner():
-    print("🚀 Sniper V2 Started...")
-    send_telegram_alert("🦅 **تم تفعيل وضع القنص V2!**\n- تم تفعيل فلتر العملات المستقرة.\n- الحد الأدنى للدخول: 2% ارتفاع.\n- فلتر توافق الترند يعمل.")
+    print("🚀 Analyst Engine Started...")
+    send_telegram_alert("🧠 **تم تفعيل وضع التحليل الفني العميق**\nجاري حساب RSI و SMA للعملات الكبرى...")
     
     while True:
         try:
-            coins = get_coingecko_data()
-            if coins:
-                print(f"🔍 Filtering {len(coins)} coins...")
+            for coin_id in TARGET_COINS:
+                # 1. جلب البيانات التاريخية (الشموع)
+                candles = get_coin_candles(coin_id)
                 
-                for coin in coins:
-                    symbol = coin['symbol'].upper()
+                if candles and len(candles) > 20:
+                    # استخراج أسعار الإغلاق فقط للحساب
+                    close_prices = [x[4] for x in candles]
+                    current_price = close_prices[-1]
                     
-                    # 1. فلتر العملات المستقرة
-                    if symbol in IGNORED_COINS: continue
+                    # 2. حساب المؤشرات
+                    rsi = calculate_rsi(close_prices, 14)
                     
-                    current_price = coin['current_price']
+                    # 3. الاستراتيجية (السر):
+                    # - شراء إذا كان RSI منخفض (تحت 35) وبدأ يرتفع (ارتداد من القاع)
+                    # - أو شراء إذا كان RSI قوي (فوق 50) ولكن لم يتشبع بعد (تحت 70) = ترند صاعد
                     
-                    # بيانات التغير
-                    change_1h = coin.get('price_change_percentage_1h_in_currency')
-                    change_24h = coin.get('price_change_percentage_24h')
+                    signal_type = None
                     
-                    if change_1h is None: change_1h = 0.0
-                    if change_24h is None: change_24h = 0.0
+                    # استراتيجية القنص من القاع (Oversold Bounce)
+                    if rsi < 35:
+                        signal_type = "قنص قاع 🟢"
                     
-                    change_1h = float(change_1h)
-                    change_24h = float(change_24h)
+                    # استراتيجية ركوب الترند (Trend Following)
+                    elif 55 < rsi < 70:
+                        signal_type = "زخم صعودي 🔥"
                     
-                    # 🔥 شروط القنص الصارمة 🔥
-                    # 1. ارتفاع قوي في آخر ساعة (أكثر من 2%)
-                    is_pump = change_1h >= PUMP_THRESHOLD
-                    
-                    # 2. الترند العام ليس هابطاً (لتجنب "مسك السكين الساقطة")
-                    is_uptrend = change_24h > 0
-                    
-                    if is_pump and is_uptrend:
-                        # حساب الأهداف
-                        tp1 = current_price * 1.03 # طمع قليل 3%
-                        tp2 = current_price * 1.07 # طمع متوسط 7%
-                        sl = current_price * 0.97  # وقف خسارة 3%
+                    if signal_type:
+                        symbol = coin_id.upper()
+                        tp1 = current_price * 1.02
+                        tp2 = current_price * 1.05
+                        sl = current_price * 0.98
                         
                         signal_data = {
                             "symbol": symbol,
                             "price": current_price,
                             "tp1": tp1, "tp2": tp2, "sl": sl,
-                            "vol": round(change_1h, 1), # نعرض قوة البمب
+                            "vol": round(rsi, 1), # سنعرض قيمة RSI مكان الفوليوم للأهمية
                             "time": datetime.now().strftime("%H:%M")
                         }
                         
                         # منع التكرار
-                        exists = any(d['symbol'] == symbol for d in signals_history)
+                        exists = any(d['symbol'] == symbol and d['time'] == signal_data['time'] for d in signals_history)
                         
                         if not exists:
-                            # تحديث التطبيق
                             signals_history.insert(0, signal_data)
                             if len(signals_history) > 20: signals_history.pop()
-                            
-                            # تنظيف رسالة النظام
-                            if len(signals_history) > 1 and signals_history[-1]['symbol'] == "SYSTEM-READY":
+                            if len(signals_history) > 1 and signals_history[-1]['symbol'] == "ANALYST-MODE":
                                 signals_history.pop()
 
-                            # إرسال تيليجرام
                             msg = f"""
-🦅 **SomaSniper Signal**
+🧠 **تحليل فني آلي**
 💎 العملة: #{symbol}
-🔥 الزخم: +{change_1h:.1f}% (1h)
-📊 الترند اليومي: +{change_24h:.1f}% (24h)
+📊 المؤشر: RSI = {rsi:.1f}
+⚡ النوع: {signal_type}
 💰 السعر: {current_price}$
 
 🎯 **أهداف:** {tp1:.4f} - {tp2:.4f}
 🛡️ **وقف:** {sl:.4f}
                             """
                             send_telegram_alert(msg)
-                            print(f"🎯 Sniper Hit: {symbol}")
+                            print(f"Signal: {symbol} | RSI: {rsi}")
+                
+                # انتظار 4 ثواني بين كل عملة لتجنب الحظر (مهم جداً في هذا الوضع)
+                time.sleep(4)
             
-            time.sleep(60) # فحص كل دقيقة (لإعطاء السوق وقتاً للتحرك)
+            # انتظار دقيقة بعد فحص كل القائمة
+            time.sleep(60)
             
         except Exception as e:
             print(f"Error: {e}")
