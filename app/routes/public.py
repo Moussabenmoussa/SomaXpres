@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, redirect
 from app import db
 from app.services.ai_agent import generate_sales_response
 from bson.objectid import ObjectId
+from app.services.email_service import send_order_notification
 import datetime
 import traceback
 
