@@ -6,25 +6,21 @@ dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/')
 def index():
-    # 1. تعريف قيم افتراضية لتجنب توقف الموقع
-    chart_data = {
-        "labels": ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"],
-        "visits": [0, 0, 0, 0, 0, 0, 0],
-        "orders": [0, 0, 0, 0, 0, 0, 0]
-    }
+    # القيم الافتراضية
     products_count = 0
     orders_count = 0
     total_views = 0
     conversion_rate = 0
     recent_orders = []
-    my_products = []  # قائمة المنتجات الجديدة
+    my_products = []
+    recent_activities = [] # <--- القائمة الجديدة للنشاطات
 
     try:
-        # 2. محاولة جلب البيانات من MongoDB
+        # جلب الإحصائيات
         products_count = db.products.count_documents({}) 
         orders_count = db.orders.count_documents({}) 
         
-        # جلب قائمة المنتجات لعرضها في الجدول (أهم خطوة)
+        # جلب المنتجات
         my_products = list(db.products.find().sort("created_at", -1).limit(20))
 
         # حساب الزيارات
@@ -33,29 +29,28 @@ def index():
         if views_result:
             total_views = views_result[0]['total_views']
         
-        # حساب نسبة التحويل
         if total_views > 0:
             conversion_rate = round((orders_count / total_views) * 100, 2)
 
-        # جلب آخر الطلبات
+        # جلب الطلبات
         recent_orders = list(db.orders.find().sort("created_at", -1).limit(5))
         
-        # بيانات الرسم البياني (يمكن ربطها لاحقاً بالتواريخ الحقيقية)
-        chart_data["visits"] = [10, 25, 15, 30, 40, 20, total_views]
-        chart_data["orders"] = [1, 2, 0, 3, 5, 2, orders_count]
+        # --- جلب النشاطات الحقيقية من قاعدة البيانات (Real Feed) ---
+        # نجلب آخر 10 نشاطات مسجلة
+        recent_activities = list(db.activity_logs.find().sort("timestamp", -1).limit(10))
 
     except Exception as e:
         print(f"⚠️ Database Warning: {e}")
-        # لن يتوقف الموقع، سيعرض أصفاراً فقط في حالة الخطأ
 
+    # لاحظ أننا حذفنا chart_data من هنا
     return render_template('dashboard/index.html', 
                            products_count=products_count,
                            orders_count=orders_count,
                            total_views=total_views,
                            conversion_rate=conversion_rate,
                            recent_orders=recent_orders,
-                           chart_data=chart_data,
-                           my_products=my_products)
+                           my_products=my_products,
+                           recent_activities=recent_activities) # تمرير النشاطات
 
 @dashboard_bp.route('/products/new', methods=['GET', 'POST'])
 def add_product():
@@ -84,9 +79,7 @@ def add_product():
                 "views": 0,
                 "orders_count": 0
             }
-            
             db.products.insert_one(new_product)
-            # إعادة التوجيه للصفحة الرئيسية بعد الحفظ
             return redirect(url_for('dashboard.index'))
         except Exception as e:
             return f"Error saving product: {e}"
