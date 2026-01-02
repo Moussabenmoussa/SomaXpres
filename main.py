@@ -4,129 +4,109 @@ import threading
 from flask import Flask, jsonify
 from datetime import datetime
 
-# ---------------- إعدادات تجاوز الحظر ----------------
-SCAN_LIMIT = 20
-TIMEFRAME = "5m"
-VOLUME_MULTIPLIER = 1.5 # خففنا الشرط قليلاً ليصطاد بسرعة
-# ----------------------------------------------------
+# ---------------- إعدادات CoinGecko ----------------
+# لا نحتاج لتوكن أو مفاتيح، هو مجاني ومفتوح
+SCAN_LIMIT = 50  # سنفحص أفضل 50 عملة
+# --------------------------------------------------
 
 app = Flask(__name__)
 signals_history = []
 
+# إضافة إشارة ترحيبية لتتأكد أن التطبيق يعمل
+start_signal = {
+    "symbol": "APP-READY",
+    "price": 1.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 100, 
+    "time": "NOW"
+}
+signals_history.append(start_signal)
+
 @app.route('/')
 def home():
-    return "✅ SomaScanner US-Mode is Running!"
+    return "✅ SomaScanner (Gecko Edition) is Running!"
 
 @app.route('/api/signals')
 def get_signals():
+    # ترتيب الإشارات لتظهر الأحدث أولاً
     return jsonify(signals_history)
 
-def get_top_gainers():
-    # 🇺🇸 استخدام الرابط الأمريكي لتجاوز حظر ريندر
-    url = "https://api.binance.us/api/v3/ticker/24hr"
+def get_coingecko_data():
+    # رابط يجلب أفضل العملات مع بيانات السعر والتغير
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": "usd",
+        "order": "volume_desc", # ترتيب حسب الفوليوم
+        "per_page": SCAN_LIMIT,
+        "page": 1,
+        "sparkline": "false",
+        "price_change_percentage": "1h" # نحتاج تغير آخر ساعة
+    }
+    
     try:
+        # إضافة User-Agent مهم جداً
         headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
         
-        if resp.status_code != 200:
-            print(f"❌ Error: {resp.status_code}")
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            print(f"⚠️ Gecko Error: {resp.status_code}")
             return []
-            
-        data = resp.json()
-        usdt_pairs = []
-        for item in data:
-            symbol = item['symbol']
-            # باينانس الأمريكي يستخدم USD أحياناً بدلاً من USDT
-            if (symbol.endswith("USDT") or symbol.endswith("USD")) and "UP" not in symbol and "DOWN" not in symbol:
-                usdt_pairs.append(item)
-        
-        # ترتيب حسب الأكثر ربحاً
-        sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x['priceChangePercent']), reverse=True)
-        return [x['symbol'] for x in sorted_pairs[:SCAN_LIMIT]]
     except Exception as e:
         print(f"❌ Connection Error: {e}")
         return []
 
-def get_market_data(symbol):
-    # 🇺🇸 أيضاً هنا نستخدم الرابط الأمريكي
-    url = f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={TIMEFRAME}&limit=21"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code == 200: return resp.json()
-    except: pass
-    return []
-
 def run_scanner():
-    print(f"🇺🇸 SomaScanner US Edition Started...")
+    print("🦎 SomaScanner Gecko Edition Started...")
     
-    # رسالة ترحيبية للتأكد من العمل
-    test_signal = {
-        "symbol": "SYSTEM-READY",
-        "price": 1.0, "tp1": 0, "tp2": 0, "sl": 0, "vol": 0, "time": "NOW"
-    }
-    signals_history.append(test_signal)
-
     while True:
         try:
-            dynamic_symbols = get_top_gainers()
+            coins = get_coingecko_data()
             
-            if dynamic_symbols:
-                print(f"Found {len(dynamic_symbols)} coins...") # للمراقبة في السجلات
+            if coins:
+                print(f"🔍 Scanned {len(coins)} coins...")
                 
-                for symbol in dynamic_symbols:
-                    candles = get_market_data(symbol)
+                for coin in coins:
+                    symbol = coin['symbol'].upper()
+                    current_price = coin['current_price']
                     
-                    if candles and len(candles) > 20:
-                        current_candle = candles[-1]
-                        close_price = float(current_candle[4])
-                        open_price = float(current_candle[1])
-                        current_volume = float(current_candle[5])
+                    # الانتباه: كوين جيكو يعطي نسبة التغير كـ null أحياناً
+                    price_change_1h = coin.get('price_change_percentage_1h_in_currency')
+                    if price_change_1h is None: price_change_1h = 0.0
+                    
+                    # الشروط: ارتفاع أكثر من 1% في آخر ساعة (Pump)
+                    # يمكنك تعديل الرقم 1.0 لجعله أصعب أو أسهل
+                    is_pump = float(price_change_1h) > 1.0 
+                    
+                    if is_pump:
+                        # صناعة التوصية
+                        signal_data = {
+                            "symbol": f"{symbol}/USD",
+                            "price": current_price,
+                            "tp1": current_price * 1.02, # هدف 2%
+                            "tp2": current_price * 1.05, # هدف 5%
+                            "sl": current_price * 0.98,  # وقف 2%
+                            "vol": round(float(price_change_1h), 1), # سنعرض نسبة الارتفاع مكان الفوليوم
+                            "time": datetime.now().strftime("%H:%M")
+                        }
                         
-                        # حساب الفوليوم
-                        past_volumes = [float(c[5]) for c in candles[:-1]]
-                        if len(past_volumes) > 0:
-                            avg_volume = sum(past_volumes) / len(past_volumes)
-                        else:
-                            avg_volume = 1.0
-                            
-                        vol_strength = current_volume / avg_volume if avg_volume > 0 else 0
-                        
-                        # الشروط (مخففة قليلاً)
-                        is_whale = current_volume > (avg_volume * VOLUME_MULTIPLIER)
-                        
-                        # الشرط الأهم: أن تكون العملة رابحة اليوم
-                        price_change_pct = ((close_price - open_price) / open_price) * 100
-                        is_pump = price_change_pct > 0.5 
-
-                        if is_whale and is_pump:
-                            signal_data = {
-                                "symbol": symbol.replace("USD", ""), # تنظيف الاسم
-                                "price": close_price,
-                                "tp1": close_price * 1.02,
-                                "tp2": close_price * 1.05,
-                                "sl": close_price * 0.98,
-                                "vol": round(vol_strength, 1),
-                                "time": datetime.now().strftime("%H:%M")
-                            }
-                            
-                            # منع التكرار
-                            exists = any(d['symbol'] == signal_data['symbol'] for d in signals_history)
-                            if not exists:
-                                signals_history.insert(0, signal_data)
-                                if len(signals_history) > 20: signals_history.pop()
-                                print(f"🚀 Signal Found: {symbol}")
-
-                    time.sleep(0.1) # سرعة الفحص
+                        # إضافة للقائمة ومنع التكرار
+                        exists = any(d['symbol'] == signal_data['symbol'] for d in signals_history)
+                        if not exists:
+                            signals_history.insert(0, signal_data)
+                            # نحذف إشارة الترحيب إذا وجدنا إشارات حقيقية
+                            if signals_history[-1]['symbol'] == "APP-READY":
+                                signals_history.pop()
+                            if len(signals_history) > 30: signals_history.pop()
+                            print(f"🚀 Signal: {symbol} (+{price_change_1h}%)")
             
-            else:
-                print("⚠️ List empty (Check US API)")
-
-            time.sleep(15)
+            # كوين جيكو يطلب الانتظار قليلاً (Rate Limit)
+            time.sleep(30) 
+            
         except Exception as e:
             print(f"Loop Error: {e}")
             time.sleep(10)
 
+# تشغيل الخيط
 t = threading.Thread(target=run_scanner)
 t.start()
 
