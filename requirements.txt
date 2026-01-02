@@ -1,6 +1,6 @@
 Flask
 requests
-pandas
-pandas_ta
 gunicorn
-numpy
+pandas==2.0.3
+numpy<2.0.0
+pandas_ta
