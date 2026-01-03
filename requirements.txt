@@ -3,5 +3,5 @@ requests
 gunicorn
 pymongo
 dnspython
-pandas
 numpy
+werkzeug
