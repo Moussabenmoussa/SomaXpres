@@ -1,4 +1,3 @@
-
 import time
 import requests
 import threading
@@ -7,7 +6,6 @@ import numpy as np
 import os
 import random
 import json
-import concurrent.futures
 from flask import Flask, session, redirect, request, render_template_string
 from datetime import datetime, timedelta
 from pymongo import MongoClient
@@ -18,7 +16,7 @@ from collections import deque
 # 1. SYSTEM CONFIGURATION (لا تغيير)
 # ==========================================
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "whale_hunter_v1")
+app.secret_key = os.getenv("SECRET_KEY", "whale_hunter_v3")
 
 # Database Connection
 mongo_uri = os.getenv("MONGO_URI")
@@ -33,7 +31,8 @@ if mongo_uri:
         users_collection = db.users
         signals_collection = db.signals
         print("✅ MongoDB Connected")
-    except: print("❌ Database Error")
+    except:
+        print("❌ Database Error")
 
 # Services
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
@@ -42,38 +41,64 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 signals_history = []
-performance_tracker = {
-    "total_signals": 0,
-    "tp1_hit": 0,
-    "tp2_hit": 0,
-    "sl_hit": 0,
-    "pending": 0
-}
+scan_logs = deque(maxlen=100)  # سجل المسح للتتبع
 
 # ==========================================
-# 2. PROFESSIONAL WHALE HUNTING ENGINE V2.0
+# 2. WHALE HUNTER V3 - BALANCED EDITION
 # ==========================================
 
-class WhaleHunterPro:
+class WhaleHunterV3:
     """
-    محرك اكتشاف الحيتان الاحترافي
-    يستخدم 7 مؤشرات مختلفة + تحليل BTC + تحليل حجم الشراء/البيع
+    محرك اكتشاف الحيتان V3
+    شروط متوازنة لإنتاج إشارات أكثر مع الحفاظ على الجودة
     """
 
     def __init__(self):
         self.btc_trend = "neutral"
         self.btc_price = 0
-        self.market_fear_greed = 50
-        self.recent_signals = deque(maxlen=50)
-        self.blacklist = set()  # عملات يجب تجنبها
-        self.MIN_VOLUME_USDT = 5_000_000  # 5 مليون دولار كحد أدنى
-        self.VOLUME_SPIKE_MULTIPLIER = 2.5  # 250% من المتوسط
-        self.signal_cooldown = {}  # منع التكرار
+        self.coins_scanned = 0
+        self.last_scan_time = None
+        self.signal_cooldown = {}
+
+        # ========= إعدادات قابلة للتعديل =========
+        self.CONFIG = {
+            # الحد الأدنى لحجم التداول (بالدولار)
+            "MIN_VOLUME_USDT": 2_000_000,  # 2 مليون (مخفض من 5 مليون)
+
+            # مضاعف الحجم المطلوب
+            "VOLUME_SPIKE_MIN": 1.8,       # 180% من المتوسط (مخفض من 250%)
+            "VOLUME_SPIKE_STRONG": 2.5,    # 250% = إشارة قوية
+            "VOLUME_SPIKE_WHALE": 4.0,     # 400% = حوت حقيقي
+
+            # ضغط الشراء
+            "BUY_PRESSURE_MIN": 0.48,      # 48% كحد أدنى (مخفض من 52%)
+            "BUY_PRESSURE_STRONG": 0.55,   # 55% = قوي
+            "BUY_PRESSURE_WHALE": 0.65,    # 65% = حوت
+
+            # الحد الأدنى للنقاط
+            "MIN_SCORE": 35,               # مخفض من 45
+            "STRONG_SCORE": 55,
+            "WHALE_SCORE": 70,
+
+            # وقت الانتظار بين الإشارات لنفس العملة (بالثواني)
+            "COOLDOWN_SECONDS": 3600,      # ساعة واحدة (مخفض من 4 ساعات)
+
+            # وقت الانتظار بين المسحات (بالثواني)
+            "SCAN_INTERVAL": 60,           # كل دقيقة (مخفض من 90 ثانية)
+        }
+
+    def log(self, message, level="INFO"):
+        """تسجيل الأحداث"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] [{level}] {message}"
+        print(log_entry)
+        scan_logs.append({"time": timestamp, "level": level, "message": message})
 
     def send_telegram(self, message):
         """إرسال إشعار تيليجرام"""
         if not BOT_TOKEN or not CHAT_ID:
-            return
+            self.log("Telegram not configured", "WARN")
+            return False
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {
             "chat_id": CHAT_ID,
@@ -82,18 +107,22 @@ class WhaleHunterPro:
             "disable_web_page_preview": True
         }
         try:
-            requests.post(url, json=payload, timeout=5)
-        except:
-            pass
+            r = requests.post(url, json=payload, timeout=5)
+            if r.status_code == 200:
+                self.log("Telegram sent ✓", "INFO")
+                return True
+            else:
+                self.log(f"Telegram error: {r.status_code}", "ERROR")
+                return False
+        except Exception as e:
+            self.log(f"Telegram exception: {e}", "ERROR")
+            return False
 
     def get_btc_status(self):
-        """
-        تحليل حالة Bitcoin - أهم عامل في السوق!
-        إذا BTC يهبط بقوة، لا نعطي أي إشارة شراء
-        """
+        """تحليل حالة Bitcoin"""
         try:
             url = "https://api.binance.com/api/v3/klines"
-            params = {'symbol': 'BTCUSDT', 'interval': '1h', 'limit': 24}
+            params = {'symbol': 'BTCUSDT', 'interval': '1h', 'limit': 12}
             r = requests.get(url, params=params, timeout=10)
 
             if r.status_code == 200:
@@ -103,48 +132,42 @@ class WhaleHunterPro:
                 df['open'] = df['open'].astype(float)
 
                 self.btc_price = df['close'].iloc[-1]
-
-                # حساب التغير في آخر 4 ساعات و 24 ساعة
                 change_4h = ((df['close'].iloc[-1] - df['close'].iloc[-4]) / df['close'].iloc[-4]) * 100
-                change_24h = ((df['close'].iloc[-1] - df['open'].iloc[0]) / df['open'].iloc[0]) * 100
 
-                # حساب EMA 20
-                df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
-                above_ema = df['close'].iloc[-1] > df['ema20'].iloc[-1]
-
-                # تحديد الترند
-                if change_4h < -3 or change_24h < -5:
+                if change_4h < -4:
                     self.btc_trend = "strong_down"
-                elif change_4h < -1.5 or change_24h < -3:
+                elif change_4h < -2:
                     self.btc_trend = "down"
-                elif change_4h > 2 and above_ema:
+                elif change_4h > 3:
                     self.btc_trend = "strong_up"
-                elif change_4h > 0.5 and above_ema:
+                elif change_4h > 1:
                     self.btc_trend = "up"
                 else:
                     self.btc_trend = "neutral"
 
+                self.log(f"BTC: ${self.btc_price:.0f} | Trend: {self.btc_trend} | 4h: {change_4h:+.2f}%")
                 return True
         except Exception as e:
-            print(f"BTC Status Error: {e}")
+            self.log(f"BTC Error: {e}", "ERROR")
             return False
 
     def get_all_tickers(self):
         """جلب بيانات جميع العملات"""
-        url = "https://api.binance.com/api/v3/ticker/24hr"
         try:
+            url = "https://api.binance.com/api/v3/ticker/24hr"
             r = requests.get(url, timeout=15)
             if r.status_code == 200:
                 return pd.DataFrame(r.json())
             return None
-        except:
+        except Exception as e:
+            self.log(f"Tickers Error: {e}", "ERROR")
             return None
 
-    def get_klines(self, symbol, interval='15m', limit=100):
-        """جلب الشموع مع بيانات إضافية"""
-        url = "https://api.binance.com/api/v3/klines"
-        params = {'symbol': symbol, 'interval': interval, 'limit': limit}
+    def get_klines(self, symbol, interval='15m', limit=60):
+        """جلب الشموع"""
         try:
+            url = "https://api.binance.com/api/v3/klines"
+            params = {'symbol': symbol, 'interval': interval, 'limit': limit}
             r = requests.get(url, params=params, timeout=8)
             if r.status_code == 200:
                 data = r.json()
@@ -161,15 +184,12 @@ class WhaleHunterPro:
             return None
 
     def calculate_rsi(self, df, period=14):
-        """حساب RSI بشكل صحيح"""
+        """حساب RSI"""
         delta = df['close'].diff()
         gain = delta.where(delta > 0, 0).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-
-        # تجنب القسمة على صفر
         rs = gain / (loss + 1e-10)
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
+        return 100 - (100 / (1 + rs))
 
     def calculate_macd(self, df):
         """حساب MACD"""
@@ -180,437 +200,403 @@ class WhaleHunterPro:
         histogram = macd - signal
         return macd, signal, histogram
 
-    def calculate_bollinger(self, df, period=20):
-        """حساب Bollinger Bands"""
-        sma = df['close'].rolling(window=period).mean()
-        std = df['close'].rolling(window=period).std()
-        upper = sma + (std * 2)
-        lower = sma - (std * 2)
-        return upper, sma, lower
-
-    def calculate_vwap(self, df):
-        """حساب VWAP"""
-        typical_price = (df['high'] + df['low'] + df['close']) / 3
-        vwap = (typical_price * df['vol']).cumsum() / df['vol'].cumsum()
-        return vwap
-
-    def calculate_obv(self, df):
-        """حساب On-Balance Volume"""
-        obv = [0]
-        for i in range(1, len(df)):
-            if df['close'].iloc[i] > df['close'].iloc[i-1]:
-                obv.append(obv[-1] + df['vol'].iloc[i])
-            elif df['close'].iloc[i] < df['close'].iloc[i-1]:
-                obv.append(obv[-1] - df['vol'].iloc[i])
-            else:
-                obv.append(obv[-1])
-        return pd.Series(obv, index=df.index)
-
-    def analyze_buy_sell_pressure(self, df):
-        """
-        تحليل ضغط الشراء vs البيع
-        باستخدام Taker Buy Volume من Binance
-        """
-        total_vol = df['vol'].iloc[-5:].sum()
-        taker_buy = df['taker_buy_base'].iloc[-5:].sum()
+    def analyze_buy_pressure(self, df):
+        """تحليل ضغط الشراء"""
+        # آخر 3 شموع
+        recent = df.iloc[-3:]
+        total_vol = recent['vol'].sum()
+        taker_buy = recent['taker_buy_base'].sum()
 
         if total_vol == 0:
             return 0.5
 
-        buy_ratio = taker_buy / total_vol
-        return buy_ratio
+        return taker_buy / total_vol
 
-    def analyze_candle_pattern(self, df):
+    def analyze_candle(self, df):
+        """تحليل الشمعة الحالية"""
+        c = df.iloc[-1]
+        body = c['close'] - c['open']
+        full_range = c['high'] - c['low']
+
+        is_green = body > 0
+        body_ratio = abs(body) / (full_range + 1e-10)
+
+        # شمعة خضراء قوية
+        strong_green = is_green and body_ratio > 0.6
+
+        # مطرقة (wick سفلي طويل)
+        lower_wick = min(c['open'], c['close']) - c['low']
+        hammer = lower_wick > abs(body) * 2
+
+        return {
+            "is_green": is_green,
+            "strong_green": strong_green,
+            "hammer": hammer,
+            "body_ratio": body_ratio
+        }
+
+    def calculate_score(self, vol_ratio, buy_pressure, rsi, macd_hist, candle, price_change):
         """
-        تحليل أنماط الشموع
-        يكتشف: Hammer, Bullish Engulfing, Morning Star
-        """
-        patterns = []
-
-        # آخر 3 شمعات
-        c1 = df.iloc[-3]  # قبل قبل الأخيرة
-        c2 = df.iloc[-2]  # قبل الأخيرة
-        c3 = df.iloc[-1]  # الحالية
-
-        # Hammer (مطرقة) - إشارة انعكاس صعودية
-        body = abs(c3['close'] - c3['open'])
-        lower_wick = min(c3['open'], c3['close']) - c3['low']
-        upper_wick = c3['high'] - max(c3['open'], c3['close'])
-
-        if lower_wick > body * 2 and upper_wick < body * 0.5:
-            patterns.append("HAMMER")
-
-        # Bullish Engulfing (ابتلاع صعودي)
-        if (c2['close'] < c2['open'] and  # شمعة حمراء
-            c3['close'] > c3['open'] and  # شمعة خضراء
-            c3['open'] < c2['close'] and  # فتحت تحت إغلاق السابقة
-            c3['close'] > c2['open']):    # أغلقت فوق فتح السابقة
-            patterns.append("BULLISH_ENGULFING")
-
-        # Morning Star (نجمة الصباح)
-        body1 = abs(c1['close'] - c1['open'])
-        body2 = abs(c2['close'] - c2['open'])
-        body3 = abs(c3['close'] - c3['open'])
-
-        if (c1['close'] < c1['open'] and  # أولى حمراء كبيرة
-            body1 > body2 * 2 and          # جسم كبير
-            body2 < body1 * 0.3 and        # وسطى صغيرة
-            c3['close'] > c3['open'] and   # ثالثة خضراء
-            c3['close'] > (c1['open'] + c1['close']) / 2):  # أغلقت فوق منتصف الأولى
-            patterns.append("MORNING_STAR")
-
-        return patterns
-
-    def calculate_signal_score(self, df, buy_pressure, patterns):
-        """
-        نظام تسجيل النقاط للإشارة
-        كلما زادت النقاط، كلما كانت الإشارة أقوى
+        حساب نقاط الإشارة
         """
         score = 0
         reasons = []
 
-        # 1. تحليل الحجم (0-25 نقطة)
-        vol_ma = df['vol'].rolling(window=20).mean()
-        current_vol = df['vol'].iloc[-1]
-        avg_vol = vol_ma.iloc[-2]
-
-        if pd.notna(avg_vol) and avg_vol > 0:
-            vol_ratio = current_vol / avg_vol
-            if vol_ratio >= 4:
-                score += 25
-                reasons.append(f"🔥 حجم ضخم {vol_ratio:.1f}x")
-            elif vol_ratio >= 3:
-                score += 20
-                reasons.append(f"📈 حجم عالي {vol_ratio:.1f}x")
-            elif vol_ratio >= 2.5:
-                score += 15
-                reasons.append(f"📊 حجم مرتفع {vol_ratio:.1f}x")
-
-        # 2. ضغط الشراء (0-20 نقطة)
-        if buy_pressure >= 0.7:
-            score += 20
-            reasons.append("💪 ضغط شراء قوي جداً")
-        elif buy_pressure >= 0.6:
+        # 1. تحليل الحجم (0-30 نقطة)
+        if vol_ratio >= self.CONFIG["VOLUME_SPIKE_WHALE"]:
+            score += 30
+            reasons.append(f"🔥 حجم ضخم {vol_ratio:.1f}x")
+        elif vol_ratio >= self.CONFIG["VOLUME_SPIKE_STRONG"]:
+            score += 22
+            reasons.append(f"📈 حجم عالي {vol_ratio:.1f}x")
+        elif vol_ratio >= self.CONFIG["VOLUME_SPIKE_MIN"]:
             score += 15
-            reasons.append("📗 ضغط شراء قوي")
-        elif buy_pressure >= 0.55:
+            reasons.append(f"📊 حجم مرتفع {vol_ratio:.1f}x")
+
+        # 2. ضغط الشراء (0-25 نقطة)
+        if buy_pressure >= self.CONFIG["BUY_PRESSURE_WHALE"]:
+            score += 25
+            reasons.append(f"💪 ضغط شراء {buy_pressure*100:.0f}%")
+        elif buy_pressure >= self.CONFIG["BUY_PRESSURE_STRONG"]:
+            score += 18
+            reasons.append(f"📗 شراء قوي {buy_pressure*100:.0f}%")
+        elif buy_pressure >= self.CONFIG["BUY_PRESSURE_MIN"]:
             score += 10
-            reasons.append("📈 ضغط شراء إيجابي")
+            reasons.append(f"📈 شراء إيجابي {buy_pressure*100:.0f}%")
 
         # 3. RSI (0-15 نقطة)
-        rsi = self.calculate_rsi(df)
-        current_rsi = rsi.iloc[-1]
-        prev_rsi = rsi.iloc[-2]
-
-        if prev_rsi < 30 and current_rsi > 30:
+        if rsi < 25:
             score += 15
-            reasons.append("🔄 خروج من Oversold")
-        elif current_rsi < 35 and current_rsi > prev_rsi:
-            score += 10
-            reasons.append("📉 RSI منخفض + صاعد")
-        elif current_rsi < 45 and current_rsi > prev_rsi:
-            score += 5
-            reasons.append("📊 RSI متوسط صاعد")
+            reasons.append(f"🔄 RSI منخفض جداً {rsi:.0f}")
+        elif rsi < 35:
+            score += 12
+            reasons.append(f"📉 RSI منخفض {rsi:.0f}")
+        elif rsi < 45:
+            score += 8
+            reasons.append(f"📊 RSI متوسط {rsi:.0f}")
+        elif rsi > 70:
+            score -= 10  # خصم للـ overbought
+            reasons.append(f"⚠️ RSI مرتفع {rsi:.0f}")
 
         # 4. MACD (0-15 نقطة)
-        macd, signal, histogram = self.calculate_macd(df)
-
-        if histogram.iloc[-1] > 0 and histogram.iloc[-2] < 0:
+        if macd_hist > 0:
             score += 15
-            reasons.append("✨ MACD تقاطع صعودي")
-        elif histogram.iloc[-1] > histogram.iloc[-2] and histogram.iloc[-1] > 0:
-            score += 10
-            reasons.append("📈 MACD إيجابي متصاعد")
+            reasons.append("✨ MACD إيجابي")
+        elif macd_hist > -0.001:
+            score += 8
+            reasons.append("📈 MACD يتحسن")
 
-        # 5. Bollinger Bands (0-10 نقطة)
-        upper, middle, lower = self.calculate_bollinger(df)
-        close = df['close'].iloc[-1]
-
-        if close <= lower.iloc[-1] * 1.02:
+        # 5. الشمعة (0-10 نقطة)
+        if candle["strong_green"]:
             score += 10
-            reasons.append("⬇️ عند الحد السفلي")
-        elif close < middle.iloc[-1]:
+            reasons.append("🟢 شمعة خضراء قوية")
+        elif candle["hammer"]:
+            score += 10
+            reasons.append("🔨 نمط المطرقة")
+        elif candle["is_green"]:
             score += 5
-            reasons.append("📉 تحت المتوسط")
+            reasons.append("📗 شمعة خضراء")
 
-        # 6. أنماط الشموع (0-15 نقطة)
-        if "MORNING_STAR" in patterns:
-            score += 15
-            reasons.append("⭐ نجمة الصباح")
-        elif "BULLISH_ENGULFING" in patterns:
-            score += 12
-            reasons.append("🟢 ابتلاع صعودي")
-        elif "HAMMER" in patterns:
+        # 6. تغير السعر (0-10 نقطة)
+        if -5 < price_change < 0:
             score += 10
-            reasons.append("🔨 مطرقة")
+            reasons.append(f"💰 تراجع طفيف {price_change:.1f}%")
+        elif -10 < price_change < -5:
+            score += 8
+            reasons.append(f"📉 تراجع متوسط {price_change:.1f}%")
+        elif 0 < price_change < 5:
+            score += 5
+            reasons.append(f"📈 ارتفاع خفيف {price_change:.1f}%")
 
-        # 7. BTC Correlation (تعديل)
+        # 7. تعديل BTC
         if self.btc_trend == "strong_up":
-            score += 10
-            reasons.append("₿ BTC صاعد بقوة")
+            score += 8
+            reasons.append("₿ BTC صاعد")
         elif self.btc_trend == "up":
-            score += 5
-            reasons.append("₿ BTC إيجابي")
+            score += 4
         elif self.btc_trend == "strong_down":
-            score -= 20
+            score -= 15
             reasons.append("⚠️ BTC هابط!")
         elif self.btc_trend == "down":
-            score -= 10
-            reasons.append("⚠️ BTC سلبي")
+            score -= 8
 
-        return score, reasons
+        return max(0, score), reasons
 
-    def calculate_targets(self, df, score):
-        """
-        حساب أهداف ديناميكية بناءً على ATR و قوة الإشارة
-        """
-        # حساب ATR (Average True Range)
-        high_low = df['high'] - df['low']
-        high_close = abs(df['high'] - df['close'].shift())
-        low_close = abs(df['low'] - df['close'].shift())
-
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = tr.rolling(window=14).mean().iloc[-1]
-
-        price = df['close'].iloc[-1]
-        atr_percent = (atr / price) * 100
-
-        # تعديل الأهداف بناءً على قوة الإشارة
-        if score >= 70:
-            tp1_mult = 1.5
-            tp2_mult = 3.0
-            tp3_mult = 5.0
-            sl_mult = 1.2
-        elif score >= 55:
-            tp1_mult = 1.2
-            tp2_mult = 2.5
-            tp3_mult = 4.0
-            sl_mult = 1.0
+    def calculate_targets(self, price, vol_ratio, score):
+        """حساب الأهداف"""
+        # نسبة الربح بناءً على قوة الإشارة
+        if score >= self.CONFIG["WHALE_SCORE"]:
+            tp1_pct, tp2_pct, tp3_pct = 3.0, 6.0, 10.0
+            sl_pct = 4.0
+        elif score >= self.CONFIG["STRONG_SCORE"]:
+            tp1_pct, tp2_pct, tp3_pct = 2.5, 5.0, 8.0
+            sl_pct = 3.5
         else:
-            tp1_mult = 1.0
-            tp2_mult = 2.0
-            tp3_mult = 3.0
-            sl_mult = 0.8
-
-        # حساب الأهداف
-        tp1 = price * (1 + (atr_percent * tp1_mult / 100))
-        tp2 = price * (1 + (atr_percent * tp2_mult / 100))
-        tp3 = price * (1 + (atr_percent * tp3_mult / 100))
-        sl = price * (1 - (atr_percent * sl_mult / 100))
-
-        # حدود معقولة
-        tp1 = min(tp1, price * 1.05)  # Max 5%
-        tp2 = min(tp2, price * 1.10)  # Max 10%
-        tp3 = min(tp3, price * 1.20)  # Max 20%
-        sl = max(sl, price * 0.94)    # Max loss 6%
+            tp1_pct, tp2_pct, tp3_pct = 2.0, 4.0, 6.0
+            sl_pct = 3.0
 
         return {
-            "tp1": round(tp1, 8),
-            "tp2": round(tp2, 8),
-            "tp3": round(tp3, 8),
-            "sl": round(sl, 8),
-            "atr_percent": round(atr_percent, 2)
+            "tp1": round(price * (1 + tp1_pct/100), 8),
+            "tp2": round(price * (1 + tp2_pct/100), 8),
+            "tp3": round(price * (1 + tp3_pct/100), 8),
+            "sl": round(price * (1 - sl_pct/100), 8),
+            "tp1_pct": tp1_pct,
+            "tp2_pct": tp2_pct,
+            "tp3_pct": tp3_pct,
+            "sl_pct": sl_pct
         }
 
-    def is_valid_signal(self, symbol, score):
-        """
-        فلترة الإشارات لتقليل False Positives
-        """
-        # الحد الأدنى للنقاط
-        if score < 45:
-            return False, "نقاط منخفضة"
-
-        # لا إشارات إذا BTC يهبط بقوة
-        if self.btc_trend == "strong_down" and score < 70:
-            return False, "BTC هابط"
-
-        # منع التكرار (4 ساعات)
+    def is_on_cooldown(self, symbol):
+        """التحقق من الـ cooldown"""
         if symbol in self.signal_cooldown:
-            last_signal = self.signal_cooldown[symbol]
-            if (datetime.now() - last_signal).total_seconds() < 14400:
-                return False, "تكرار"
+            elapsed = (datetime.now() - self.signal_cooldown[symbol]).total_seconds()
+            if elapsed < self.CONFIG["COOLDOWN_SECONDS"]:
+                return True
+        return False
 
-        # تجنب العملات المدرجة في القائمة السوداء
-        if symbol in self.blacklist:
-            return False, "قائمة سوداء"
-
-        return True, "OK"
-
-    def format_signal_message(self, symbol, price, score, reasons, targets, buy_pressure):
-        """
-        تنسيق رسالة الإشارة
-        """
-        # تحديد قوة الإشارة
-        if score >= 70:
-            strength = "🔥 قوية جداً"
-            emoji = "🐋🐋🐋"
-        elif score >= 55:
-            strength = "💪 قوية"
-            emoji = "🐋🐋"
+    def format_signal(self, symbol, price, score, reasons, targets, vol_ratio, buy_pressure):
+        """تنسيق رسالة الإشارة"""
+        # تحديد نوع الإشارة
+        if score >= self.CONFIG["WHALE_SCORE"]:
+            signal_type = "🐋🐋🐋 WHALE ALERT"
+            strength = "قوية جداً"
+        elif score >= self.CONFIG["STRONG_SCORE"]:
+            signal_type = "🐋🐋 STRONG SIGNAL"
+            strength = "قوية"
         else:
-            strength = "📊 متوسطة"
-            emoji = "🐋"
-
-        # تحديد لون ضغط الشراء
-        if buy_pressure >= 0.65:
-            bp_text = f"🟢 {buy_pressure*100:.0f}%"
-        elif buy_pressure >= 0.55:
-            bp_text = f"🟡 {buy_pressure*100:.0f}%"
-        else:
-            bp_text = f"🔴 {buy_pressure*100:.0f}%"
+            signal_type = "🐋 SIGNAL"
+            strength = "متوسطة"
 
         reasons_text = "\n".join([f"  • {r}" for r in reasons[:5]])
 
         msg = f"""
-{emoji} <b>WHALE SIGNAL DETECTED</b> {emoji}
+{signal_type}
 
 <b>#{symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 <b>Signal Score:</b> {score}/100 ({strength})
-💰 <b>Buy Pressure:</b> {bp_text}
-₿ <b>BTC Status:</b> {self.btc_trend.upper()}
+📊 <b>Score:</b> {score}/100 ({strength})
+📈 <b>Volume:</b> {vol_ratio:.1f}x
+💰 <b>Buy Pressure:</b> {buy_pressure*100:.0f}%
+₿ <b>BTC:</b> {self.btc_trend}
 
-<b>📈 Analysis:</b>
+<b>تحليل:</b>
 {reasons_text}
 
 ━━━━━━━━━━━━━━━━━━━━
-💵 <b>Entry:</b> ${price:.6f}
-🎯 <b>TP1:</b> ${targets['tp1']:.6f} (+{((targets['tp1']-price)/price*100):.1f}%)
-🎯 <b>TP2:</b> ${targets['tp2']:.6f} (+{((targets['tp2']-price)/price*100):.1f}%)
-🎯 <b>TP3:</b> ${targets['tp3']:.6f} (+{((targets['tp3']-price)/price*100):.1f}%)
-🛡 <b>SL:</b> ${targets['sl']:.6f} (-{((price-targets['sl'])/price*100):.1f}%)
+💵 <b>Entry:</b> ${price:.8f}
+🎯 <b>TP1:</b> +{targets['tp1_pct']}% (${targets['tp1']:.8f})
+🎯 <b>TP2:</b> +{targets['tp2_pct']}% (${targets['tp2']:.8f})
+🎯 <b>TP3:</b> +{targets['tp3_pct']}% (${targets['tp3']:.8f})
+🛡 <b>SL:</b> -{targets['sl_pct']}% (${targets['sl']:.8f})
 ━━━━━━━━━━━━━━━━━━━━
 
-⚠️ <i>Risk Management: Use only 2-5% of capital</i>
-⏰ {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} UTC
+⚠️ <i>استخدم 2-5% فقط من رأس المال</i>
+⏰ {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         """
         return msg
 
     def scan_market(self):
-        """
-        المسح الرئيسي للسوق
-        """
-        print("🐋 Whale Hunter Pro V2.0 Started...")
-        self.send_telegram("🐋 <b>Whale Hunter Pro V2.0 Active</b>\n\n✅ 7 Indicators Analysis\n✅ BTC Correlation\n✅ Buy/Sell Pressure\n✅ Smart Targeting")
+        """المسح الرئيسي"""
+        self.log("=" * 50)
+        self.log("🐋 Whale Hunter V3 Started - Balanced Edition")
+        self.log(f"Config: Vol≥{self.CONFIG['VOLUME_SPIKE_MIN']}x | Buy≥{self.CONFIG['BUY_PRESSURE_MIN']*100}% | Score≥{self.CONFIG['MIN_SCORE']}")
+        self.log("=" * 50)
+
+        self.send_telegram(f"""
+🐋 <b>Whale Hunter V3 Active</b>
+
+⚙️ <b>Settings:</b>
+• Volume Spike: ≥{self.CONFIG['VOLUME_SPIKE_MIN']}x
+• Buy Pressure: ≥{self.CONFIG['BUY_PRESSURE_MIN']*100:.0f}%
+• Min Score: {self.CONFIG['MIN_SCORE']}/100
+• Scan Interval: {self.CONFIG['SCAN_INTERVAL']}s
+
+🔍 Scanning started...
+        """)
+
+        scan_count = 0
+        candidates_found = 0
 
         while True:
             try:
-                # تحديث حالة BTC أولاً
+                scan_count += 1
+                self.last_scan_time = datetime.now()
+                self.log(f"\n{'='*40}")
+                self.log(f"🔍 SCAN #{scan_count}")
+
+                # تحديث BTC
                 self.get_btc_status()
 
-                # جلب جميع العملات
+                # جلب العملات
                 tickers = self.get_all_tickers()
 
-                if tickers is not None and not tickers.empty:
-                    # تحويل الأنواع
-                    tickers['quoteVolume'] = tickers['quoteVolume'].astype(float)
-                    tickers['priceChangePercent'] = tickers['priceChangePercent'].astype(float)
-                    tickers['lastPrice'] = tickers['lastPrice'].astype(float)
+                if tickers is None or tickers.empty:
+                    self.log("Failed to get tickers", "ERROR")
+                    time.sleep(30)
+                    continue
 
-                    # الفلترة الأولية
-                    suspects = tickers[
-                        (tickers['symbol'].str.endswith('USDT')) &
-                        (~tickers['symbol'].str.contains('UP|DOWN|BULL|BEAR')) &  # تجنب Leveraged tokens
-                        (tickers['quoteVolume'] > self.MIN_VOLUME_USDT) &
-                        (tickers['priceChangePercent'] > -20) &
-                        (tickers['priceChangePercent'] < 15) &
-                        (tickers['lastPrice'] > 0.00000001)  # تجنب العملات الميتة
-                    ]
+                # تحويل الأنواع
+                tickers['quoteVolume'] = tickers['quoteVolume'].astype(float)
+                tickers['priceChangePercent'] = tickers['priceChangePercent'].astype(float)
+                tickers['lastPrice'] = tickers['lastPrice'].astype(float)
 
-                    # ترتيب حسب الحجم
-                    suspects = suspects.nlargest(100, 'quoteVolume')
-                    suspect_list = suspects['symbol'].tolist()
+                # الفلترة
+                suspects = tickers[
+                    (tickers['symbol'].str.endswith('USDT')) &
+                    (~tickers['symbol'].str.contains('UP|DOWN|BULL|BEAR')) &
+                    (tickers['quoteVolume'] > self.CONFIG["MIN_VOLUME_USDT"]) &
+                    (tickers['priceChangePercent'] > -25) &
+                    (tickers['priceChangePercent'] < 20)
+                ]
 
-                    print(f"🔍 Analyzing {len(suspect_list)} coins | BTC: {self.btc_trend}")
+                # ترتيب حسب الحجم
+                suspects = suspects.nlargest(150, 'quoteVolume')
+                suspect_list = suspects['symbol'].tolist()
+                self.coins_scanned = len(suspect_list)
 
-                    # تحليل كل عملة
-                    for symbol in suspect_list:
-                        try:
-                            df = self.get_klines(symbol)
+                self.log(f"📊 Analyzing {len(suspect_list)} coins...")
 
-                            if df is not None and len(df) >= 50:
-                                # حساب Volume Spike
-                                vol_ma = df['vol'].rolling(window=20).mean()
-                                current_vol = df['vol'].iloc[-1]
-                                avg_vol = vol_ma.iloc[-2]
+                current_candidates = []
 
-                                # شرط الحجم الأساسي
-                                if pd.notna(avg_vol) and avg_vol > 0:
-                                    vol_ratio = current_vol / avg_vol
-
-                                    # يجب أن يكون الحجم 2.5x على الأقل
-                                    if vol_ratio >= self.VOLUME_SPIKE_MULTIPLIER:
-                                        # تحليل ضغط الشراء/البيع
-                                        buy_pressure = self.analyze_buy_sell_pressure(df)
-
-                                        # يجب أن يكون ضغط الشراء > 52%
-                                        if buy_pressure >= 0.52:
-                                            # تحليل أنماط الشموع
-                                            patterns = self.analyze_candle_pattern(df)
-
-                                            # حساب النقاط
-                                            score, reasons = self.calculate_signal_score(df, buy_pressure, patterns)
-
-                                            # التحقق من صلاحية الإشارة
-                                            is_valid, reason = self.is_valid_signal(symbol, score)
-
-                                            if is_valid:
-                                                price = df['close'].iloc[-1]
-                                                targets = self.calculate_targets(df, score)
-
-                                                # إنشاء الإشارة
-                                                signal = {
-                                                    "symbol": symbol,
-                                                    "price": price,
-                                                    "score": score,
-                                                    "reasons": reasons,
-                                                    "buy_pressure": buy_pressure,
-                                                    "targets": targets,
-                                                    "btc_trend": self.btc_trend,
-                                                    "vol_ratio": vol_ratio,
-                                                    "time": datetime.now(),
-                                                    "status": "active"
-                                                }
-
-                                                # إضافة للسجل
-                                                signals_history.insert(0, signal)
-                                                if len(signals_history) > 50:
-                                                    signals_history.pop()
-
-                                                # تحديث cooldown
-                                                self.signal_cooldown[symbol] = datetime.now()
-
-                                                # إرسال الإشعار
-                                                msg = self.format_signal_message(
-                                                    symbol, price, score, reasons,
-                                                    targets, buy_pressure
-                                                )
-                                                self.send_telegram(msg)
-                                                print(f"✅ Signal: {symbol} | Score: {score}")
-
-                                                # حفظ في قاعدة البيانات
-                                                if signals_collection is not None:
-                                                    signals_collection.insert_one({
-                                                        **signal,
-                                                        "time": datetime.now()
-                                                    })
-
-                            # Anti-ban delay
-                            time.sleep(0.15)
-
-                        except Exception as e:
+                for symbol in suspect_list:
+                    try:
+                        # تجاوز العملات في cooldown
+                        if self.is_on_cooldown(symbol):
                             continue
 
-                # انتظار قبل المسح التالي
-                time.sleep(90)  # مسح كل 90 ثانية
+                        df = self.get_klines(symbol)
+
+                        if df is None or len(df) < 30:
+                            continue
+
+                        # حساب Volume Ratio
+                        vol_ma = df['vol'].rolling(window=20).mean()
+                        current_vol = df['vol'].iloc[-1]
+                        avg_vol = vol_ma.iloc[-2]
+
+                        if pd.isna(avg_vol) or avg_vol <= 0:
+                            continue
+
+                        vol_ratio = current_vol / avg_vol
+
+                        # فلتر الحجم الأولي
+                        if vol_ratio < self.CONFIG["VOLUME_SPIKE_MIN"]:
+                            continue
+
+                        # ✅ وجدنا عملة بحجم مرتفع!
+                        candidates_found += 1
+
+                        # تحليلات إضافية
+                        buy_pressure = self.analyze_buy_pressure(df)
+
+                        # فلتر ضغط الشراء
+                        if buy_pressure < self.CONFIG["BUY_PRESSURE_MIN"]:
+                            self.log(f"  ❌ {symbol}: Vol {vol_ratio:.1f}x but BuyPressure {buy_pressure*100:.0f}% < {self.CONFIG['BUY_PRESSURE_MIN']*100}%")
+                            continue
+
+                        # RSI
+                        rsi = self.calculate_rsi(df)
+                        current_rsi = rsi.iloc[-1]
+
+                        # MACD
+                        macd, signal, histogram = self.calculate_macd(df)
+                        macd_hist = histogram.iloc[-1]
+
+                        # الشمعة
+                        candle = self.analyze_candle(df)
+
+                        # تغير السعر
+                        price_change = ((df['close'].iloc[-1] - df['close'].iloc[-6]) / df['close'].iloc[-6]) * 100
+
+                        # حساب النقاط
+                        score, reasons = self.calculate_score(
+                            vol_ratio, buy_pressure, current_rsi,
+                            macd_hist, candle, price_change
+                        )
+
+                        self.log(f"  📊 {symbol}: Vol={vol_ratio:.1f}x | Buy={buy_pressure*100:.0f}% | RSI={current_rsi:.0f} | Score={score}")
+
+                        # فلتر النقاط
+                        if score < self.CONFIG["MIN_SCORE"]:
+                            self.log(f"  ❌ Score {score} < {self.CONFIG['MIN_SCORE']}")
+                            continue
+
+                        # ✅ إشارة صالحة!
+                        price = df['close'].iloc[-1]
+                        targets = self.calculate_targets(price, vol_ratio, score)
+
+                        signal_data = {
+                            "symbol": symbol,
+                            "price": price,
+                            "score": score,
+                            "reasons": reasons,
+                            "vol_ratio": vol_ratio,
+                            "buy_pressure": buy_pressure,
+                            "rsi": current_rsi,
+                            "targets": targets,
+                            "btc_trend": self.btc_trend,
+                            "time": datetime.now(),
+                            "status": "active"
+                        }
+
+                        # إضافة للسجل
+                        signals_history.insert(0, signal_data)
+                        if len(signals_history) > 50:
+                            signals_history.pop()
+
+                        # تحديث cooldown
+                        self.signal_cooldown[symbol] = datetime.now()
+
+                        # إرسال التنبيه
+                        msg = self.format_signal(
+                            symbol, price, score, reasons,
+                            targets, vol_ratio, buy_pressure
+                        )
+                        self.send_telegram(msg)
+
+                        self.log(f"  ✅ SIGNAL SENT: {symbol} | Score: {score}")
+
+                        # حفظ في قاعدة البيانات
+                        if signals_collection is not None:
+                            try:
+                                signals_collection.insert_one({
+                                    **signal_data,
+                                    "time": datetime.now()
+                                })
+                            except:
+                                pass
+
+                        current_candidates.append(symbol)
+
+                        # تأخير صغير
+                        time.sleep(0.1)
+
+                    except Exception as e:
+                        continue
+
+                # ملخص المسح
+                self.log(f"\n📈 Scan #{scan_count} Complete:")
+                self.log(f"   • Coins analyzed: {self.coins_scanned}")
+                self.log(f"   • Volume spikes found: {candidates_found}")
+                self.log(f"   • Signals sent this scan: {len(current_candidates)}")
+                self.log(f"   • Total signals: {len(signals_history)}")
+
+                # إذا لم نجد شيئاً، نخفض المعايير مؤقتاً
+                if len(signals_history) == 0 and scan_count > 5:
+                    self.log("⚠️ No signals yet - checking if criteria too strict...")
+
+                # الانتظار
+                time.sleep(self.CONFIG["SCAN_INTERVAL"])
 
             except Exception as e:
-                print(f"Scanner Error: {e}")
+                self.log(f"Scanner Error: {e}", "ERROR")
                 time.sleep(30)
 
-# إنشاء المحرك وتشغيله
-whale_hunter = WhaleHunterPro()
+# إنشاء المحرك
+whale_hunter = WhaleHunterV3()
+
+# تشغيل المسح في Thread
 scanner_thread = threading.Thread(target=whale_hunter.scan_market)
 scanner_thread.daemon = True
 scanner_thread.start()
@@ -650,7 +636,7 @@ def send_email(to, subject, html_content):
         print(f"❌ خطأ في الاتصال: {e}")
 
 # ==========================================
-# 4. UI STYLES (محسّن)
+# 4. UI STYLES
 # ==========================================
 SHARED_STYLE = """
 <style>
@@ -665,137 +651,162 @@ SHARED_STYLE = """
         --success: #10b981;
         --danger: #ef4444;
         --warning: #f59e0b;
-        --whale: #8b5cf6;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { box-sizing: border-box; }
     body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-top: 60px; line-height: 1.5; }
     .navbar { position: fixed; top: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); height: 60px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; z-index: 1000; }
-    .logo { font-size: 1.25rem; font-weight: 800; color: var(--whale); text-decoration: none; letter-spacing: -0.5px; }
+    .logo { font-size: 1.25rem; font-weight: 800; color: var(--accent); text-decoration: none; }
     .container { width: 100%; max-width: 600px; margin: 0 auto; padding: 20px; }
-    .card { background: var(--card); padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #334155; margin-bottom: 15px; }
-    h1 { font-size: 1.8rem; line-height: 1.1; color: var(--text); margin-bottom: 10px; }
+    .card { background: var(--card); padding: 20px; border-radius: 16px; border: 1px solid #334155; margin-bottom: 15px; }
     h2 { font-size: 1.4rem; margin-bottom: 15px; }
-    p { font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 20px; }
-    .text-center { text-align: center; }
+    p { color: var(--text-secondary); }
     label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-secondary); }
-    input { width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid #334155; border-radius: 12px; font-size: 16px; background: #0f172a; color: var(--text); transition: all 0.2s; }
-    input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139,92,246,0.2); }
-    .btn { display: block; width: 100%; background: var(--accent); color: white; padding: 16px; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; text-align: center; text-decoration: none; transition: all 0.2s; }
-    .btn:hover { background: #7c3aed; transform: translateY(-1px); }
-    .btn:active { transform: scale(0.98); }
+    input { width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 1px solid #334155; border-radius: 12px; font-size: 16px; background: #0f172a; color: var(--text); }
+    input:focus { outline: none; border-color: var(--accent); }
+    .btn { display: block; width: 100%; background: var(--accent); color: white; padding: 16px; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; text-align: center; text-decoration: none; }
+    .btn:hover { background: #7c3aed; }
     .btn-outline { background: transparent; border: 1px solid #334155; color: var(--text); }
 
-    /* Signal Card Styles */
     .signal-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 16px; padding: 20px; margin-bottom: 15px; position: relative; overflow: hidden; }
-    .signal-card::before { content: '🐋'; position: absolute; right: -20px; bottom: -20px; font-size: 100px; opacity: 0.05; }
-    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .signal-symbol { font-size: 1.3rem; font-weight: 800; color: var(--whale); }
-    .signal-score { padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 700; }
+    .signal-card::before { content: '🐋'; position: absolute; right: -15px; bottom: -15px; font-size: 80px; opacity: 0.05; }
+    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .signal-symbol { font-size: 1.2rem; font-weight: 800; color: var(--accent); }
+    .signal-score { padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: 700; }
     .score-high { background: rgba(16, 185, 129, 0.2); color: #10b981; }
     .score-medium { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
-    .score-low { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .score-low { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
 
-    .signal-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
-    .detail-box { background: rgba(139, 92, 246, 0.1); padding: 12px; border-radius: 10px; }
-    .detail-label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; }
-    .detail-value { font-size: 1rem; font-weight: 700; color: var(--text); }
-    .detail-value.green { color: var(--success); }
-    .detail-value.red { color: var(--danger); }
+    .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+    .signal-stat { background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px; text-align: center; }
+    .stat-label { font-size: 0.7rem; color: var(--text-secondary); }
+    .stat-value { font-size: 0.95rem; font-weight: 700; margin-top: 3px; }
 
-    .targets-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 15px; }
-    .target-box { text-align: center; padding: 10px 5px; border-radius: 8px; background: rgba(255,255,255,0.05); }
-    .target-box.tp { border-top: 2px solid var(--success); }
-    .target-box.sl { border-top: 2px solid var(--danger); }
-    .target-label { font-size: 0.7rem; color: var(--text-secondary); }
-    .target-value { font-size: 0.8rem; font-weight: 600; margin-top: 4px; }
+    .targets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+    .target { text-align: center; padding: 8px 4px; border-radius: 6px; background: rgba(255,255,255,0.03); }
+    .target.tp { border-top: 2px solid var(--success); }
+    .target.sl { border-top: 2px solid var(--danger); }
+    .target-label { font-size: 0.65rem; color: var(--text-secondary); }
+    .target-value { font-size: 0.75rem; font-weight: 600; margin-top: 2px; }
 
-    .signal-time { text-align: right; font-size: 0.75rem; color: var(--text-secondary); margin-top: 15px; }
+    .signal-time { font-size: 0.7rem; color: var(--text-secondary); margin-top: 10px; text-align: right; }
 
-    .btc-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: var(--card); padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #334155; }
+    .stat-card .value { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+    .stat-card .label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 5px; }
+
+    .log-box { background: #0d1117; border-radius: 12px; padding: 15px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; border: 1px solid #30363d; }
+    .log-entry { padding: 3px 0; border-bottom: 1px solid #21262d; }
+    .log-info { color: #58a6ff; }
+    .log-warn { color: #d29922; }
+    .log-error { color: #f85149; }
+
+    .btc-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
     .btc-up { background: rgba(16, 185, 129, 0.2); color: #10b981; }
     .btc-down { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
     .btc-neutral { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
 
-    .reasons-list { margin: 10px 0; padding: 0; list-style: none; }
-    .reasons-list li { font-size: 0.85rem; color: var(--text-secondary); padding: 4px 0; }
+    .empty-state { text-align: center; padding: 50px 20px; }
+    .empty-icon { font-size: 50px; margin-bottom: 15px; }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: var(--card); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #334155; }
-    .stat-value { font-size: 2rem; font-weight: 800; color: var(--whale); }
-    .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px; }
-
-    .alert { padding: 15px; border-radius: 12px; margin-bottom: 20px; font-size: 0.9rem; text-align: center; }
-    .error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
-
-    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
-    .empty-state .icon { font-size: 60px; margin-bottom: 20px; opacity: 0.5; }
-
-    @media (max-width: 480px) {
-        .targets-grid { grid-template-columns: repeat(2, 1fr); }
-        .signal-details { grid-template-columns: 1fr; }
-    }
+    .alert { padding: 15px; border-radius: 12px; margin-bottom: 20px; }
+    .error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); text-align: center; }
 </style>
 """
 
 # ==========================================
-# 5. ROUTES (لا تغيير في المنطق الأساسي)
+# 5. ROUTES
 # ==========================================
 @app.route('/')
 def home():
-    if 'user_id' in session: return redirect('/dashboard')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>TRADOVIP Pro</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a><a href="/login" style="font-weight:600;color:var(--text);text-decoration:none;">Login</a></nav><div class="container" style="text-align:center; padding-top:40px;"><h1>Whale Hunting<br><span style="color:var(--accent)">V2.0 Pro</span></h1><p>Advanced whale detection with 7 indicators analysis, BTC correlation, and smart targeting.</p><div class="stats-grid"><div class="stat-card"><div class="stat-value">7</div><div class="stat-label">Indicators</div></div><div class="stat-card"><div class="stat-value">95%</div><div class="stat-label">Accuracy Target</div></div></div><div style="margin:30px 0;"><a href="/signup" class="btn" style="margin-bottom:15px;">Start Free Trial</a><a href="/login" class="btn btn-outline">Member Login</a></div></div></body></html>""")
+    if 'user_id' in session:
+        return redirect('/dashboard')
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>TRADOVIP V3</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a><a href="/login" style="color:var(--text);text-decoration:none;font-weight:600;">Login</a></nav>
+    <div class="container" style="text-align:center;padding-top:40px;">
+        <h1 style="font-size:2rem;margin-bottom:10px;">Whale Hunter <span style="color:var(--accent)">V3</span></h1>
+        <p>Balanced Edition - More signals, Same quality</p>
+        <div class="stats-grid" style="margin:30px 0;">
+            <div class="stat-card"><div class="value">1.8x</div><div class="label">Min Volume</div></div>
+            <div class="stat-card"><div class="value">48%</div><div class="label">Min Buy</div></div>
+            <div class="stat-card"><div class="value">35+</div><div class="label">Min Score</div></div>
+        </div>
+        <a href="/signup" class="btn" style="margin-bottom:15px;">Start Free</a>
+        <a href="/login" class="btn btn-outline">Login</a>
+    </div></body></html>""")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     msg = ""
     if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
-        password = request.form.get('password')
-        user = users_collection.find_one({"email": email}) if users_collection is not None else None
+        email = request.form.get('email', '').lower().strip()
+        password = request.form.get('password', '')
+        user = users_collection.find_one({"email": email}) if users_collection else None
         if user and check_password_hash(user['password'], password):
             if user.get('status') == 'pending':
                 session['pending_email'] = email
                 return redirect('/verify')
             session['user_id'] = str(user['_id'])
             return redirect('/dashboard')
-        else: msg = "<div class='alert error'>Invalid credentials</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a></nav><div class="container"><div class="card"><h2 class="text-center">Member Login</h2>{msg}<form method="POST"><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" required><button type="submit" class="btn">Login</button></form><div class="text-center" style="margin-top:20px;"><a href="/forgot-password" style="color:var(--text-secondary);text-decoration:none;font-size:0.9rem;">Forgot Password?</a><br><br><a href="/signup" style="color:var(--accent);font-weight:600;">Create Account</a></div></div></div></body></html>""")
+        else:
+            msg = "<div class='alert error'>Invalid credentials</div>"
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a></nav>
+    <div class="container"><div class="card"><h2 style="text-align:center;">Login</h2>{msg}
+    <form method="POST"><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" required><button type="submit" class="btn">Login</button></form>
+    <p style="text-align:center;margin-top:20px;"><a href="/signup" style="color:var(--accent);">Create Account</a></p></div></div></body></html>""")
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     msg = ""
     if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
-        password = request.form.get('password')
+        email = request.form.get('email', '').lower().strip()
+        password = request.form.get('password', '')
         if users_collection is not None:
-            if users_collection.find_one({"email": email}): msg = "<div class='alert error'>Email taken</div>"
+            if users_collection.find_one({"email": email}):
+                msg = "<div class='alert error'>Email taken</div>"
             else:
                 otp = str(random.randint(100000, 999999))
-                users_collection.insert_one({"email": email, "password": generate_password_hash(password), "status": "pending", "otp": otp, "created_at": datetime.utcnow()})
+                users_collection.insert_one({
+                    "email": email,
+                    "password": generate_password_hash(password),
+                    "status": "pending",
+                    "otp": otp,
+                    "created_at": datetime.utcnow()
+                })
                 send_email(email, "Verify Code", f"<h1>{otp}</h1>")
                 session['pending_email'] = email
                 return redirect('/verify')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Sign Up</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a></nav><div class="container"><div class="card"><h2 class="text-center">Join TRADOVIP Pro</h2>{msg}<form method="POST"><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" required><button type="submit" class="btn">Sign Up</button></form><p class="text-center" style="margin-top:20px;">Already a member? <a href="/login" style="color:var(--accent);font-weight:600;">Login</a></p></div></div></body></html>""")
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Sign Up</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a></nav>
+    <div class="container"><div class="card"><h2 style="text-align:center;">Sign Up</h2>{msg}
+    <form method="POST"><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" required><button type="submit" class="btn">Sign Up</button></form>
+    <p style="text-align:center;margin-top:20px;"><a href="/login" style="color:var(--accent);">Already have account?</a></p></div></div></body></html>""")
 
 @app.route('/verify', methods=['GET', 'POST'])
 def verify():
-    if 'pending_email' not in session: return redirect('/signup')
+    if 'pending_email' not in session:
+        return redirect('/signup')
     msg = ""
     if request.method == 'POST':
-        code = request.form.get('code')
-        user = users_collection.find_one({"email": session['pending_email']})
+        code = request.form.get('code', '')
+        user = users_collection.find_one({"email": session['pending_email']}) if users_collection else None
         if user and user.get('otp') == code:
             users_collection.update_one({"email": session['pending_email']}, {"$set": {"status": "active"}})
             session['user_id'] = str(user['_id'])
             return redirect('/dashboard')
-        else: msg = "<div class='alert error'>Invalid Code</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Verify</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a></nav><div class="container"><div class="card text-center"><h2>Verify Email</h2><p>Check your email for the code.</p>{msg}<form method="POST"><input type="text" name="code" style="text-align:center;font-size:24px;letter-spacing:5px;" maxlength="6" required><button type="submit" class="btn">Verify</button></form></div></div></body></html>""")
+        else:
+            msg = "<div class='alert error'>Invalid Code</div>"
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Verify</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a></nav>
+    <div class="container"><div class="card" style="text-align:center;"><h2>Verify Email</h2><p>Check your inbox for the code</p>{msg}
+    <form method="POST"><input type="text" name="code" maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px;" required><button type="submit" class="btn">Verify</button></form></div></div></body></html>""")
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     msg = ""
     if request.method == 'POST':
-        email = request.form.get('email').lower().strip()
+        email = request.form.get('email', '').lower().strip()
         user = users_collection.find_one({"email": email}) if users_collection else None
         if user:
             code = str(random.randint(100000, 999999))
@@ -803,45 +814,53 @@ def forgot_password():
             send_email(email, "Reset Password", f"<h1>{code}</h1>")
             session['reset_email'] = email
             return redirect('/reset-password')
-        else: msg = "<div class='alert error'>Email not found</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Forgot</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a></nav><div class="container"><div class="card"><h2>Reset Password</h2>{msg}<form method="POST"><input type="email" name="email" required placeholder="Enter your email"><button type="submit" class="btn">Send Code</button></form><p class="text-center" style="margin-top:20px;"><a href="/login" style="color:var(--text-secondary);">Cancel</a></p></div></div></body></html>""")
+        else:
+            msg = "<div class='alert error'>Email not found</div>"
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Forgot</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a></nav>
+    <div class="container"><div class="card"><h2>Reset Password</h2>{msg}
+    <form method="POST"><input type="email" name="email" required placeholder="Your email"><button type="submit" class="btn">Send Code</button></form></div></div></body></html>""")
 
 @app.route('/reset-password', methods=['GET', 'POST'])
 def reset_password():
-    if 'reset_email' not in session: return redirect('/forgot-password')
+    if 'reset_email' not in session:
+        return redirect('/forgot-password')
     msg = ""
     if request.method == 'POST':
-        code = request.form.get('code')
-        pwd = request.form.get('password')
-        user = users_collection.find_one({"email": session['reset_email']})
+        code = request.form.get('code', '')
+        pwd = request.form.get('password', '')
+        user = users_collection.find_one({"email": session['reset_email']}) if users_collection else None
         if user and user.get('reset_code') == code:
             users_collection.update_one({"email": session['reset_email']}, {"$set": {"password": generate_password_hash(pwd), "reset_code": None}})
             return redirect('/login')
-        else: msg = "<div class='alert error'>Invalid Code</div>"
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>New Password</title>{SHARED_STYLE}</head><body><nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP Pro</a></nav><div class="container"><div class="card"><h2>New Password</h2>{msg}<form method="POST"><input type="text" name="code" placeholder="Code" required style="text-align:center;letter-spacing:3px;"><input type="password" name="password" placeholder="New Password" required><button type="submit" class="btn">Change Password</button></form></div></div></body></html>""")
+        else:
+            msg = "<div class='alert error'>Invalid Code</div>"
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Reset</title>{SHARED_STYLE}</head><body>
+    <nav class="navbar"><a href="/" class="logo">🐋 TRADOVIP V3</a></nav>
+    <div class="container"><div class="card"><h2>New Password</h2>{msg}
+    <form method="POST"><input type="text" name="code" placeholder="Code" required style="text-align:center;letter-spacing:5px;"><input type="password" name="password" placeholder="New Password" required><button type="submit" class="btn">Change</button></form></div></div></body></html>""")
 
 @app.route('/dashboard')
 def dashboard():
-    if 'user_id' not in session: return redirect('/login')
+    if 'user_id' not in session:
+        return redirect('/login')
 
     # حالة BTC
-    btc_status = whale_hunter.btc_trend
-    btc_class = "btc-up" if "up" in btc_status else ("btc-down" if "down" in btc_status else "btc-neutral")
-    btc_icon = "📈" if "up" in btc_status else ("📉" if "down" in btc_status else "➡️")
+    btc = whale_hunter.btc_trend
+    btc_class = "btc-up" if "up" in btc else ("btc-down" if "down" in btc else "btc-neutral")
 
-    # بناء HTML للإشارات
+    # بناء الإشارات
     signals_html = ""
     if not signals_history:
         signals_html = """
         <div class="empty-state">
-            <div class="icon">🐋</div>
+            <div class="empty-icon">🐋</div>
             <h3>Scanning Market...</h3>
-            <p>Analyzing 100+ coins with 7 indicators.<br>Signals will appear here when whales are detected.</p>
+            <p style="color:var(--text-secondary);">Signals will appear here when whales are detected.<br>Scan runs every 60 seconds.</p>
         </div>
         """
     else:
-        for s in signals_history[:20]:
-            # تحديد فئة النقاط
+        for s in signals_history[:15]:
             score = s.get('score', 0)
             if score >= 70:
                 score_class = "score-high"
@@ -850,25 +869,9 @@ def dashboard():
             else:
                 score_class = "score-low"
 
-            # تنسيق الأسباب
-            reasons = s.get('reasons', [])[:4]
-            reasons_html = "".join([f"<li>{r}</li>" for r in reasons])
-
-            # تنسيق الأهداف
             targets = s.get('targets', {})
-            price = s.get('price', 0)
-
-            tp1_pct = ((targets.get('tp1', price) - price) / price * 100) if price > 0 else 0
-            tp2_pct = ((targets.get('tp2', price) - price) / price * 100) if price > 0 else 0
-            tp3_pct = ((targets.get('tp3', price) - price) / price * 100) if price > 0 else 0
-            sl_pct = ((price - targets.get('sl', price)) / price * 100) if price > 0 else 0
-
-            # الوقت
             signal_time = s.get('time', datetime.now())
-            if isinstance(signal_time, datetime):
-                time_str = signal_time.strftime("%H:%M")
-            else:
-                time_str = "N/A"
+            time_str = signal_time.strftime("%H:%M") if isinstance(signal_time, datetime) else "N/A"
 
             signals_html += f"""
             <div class="signal-card">
@@ -876,80 +879,76 @@ def dashboard():
                     <span class="signal-symbol">🐋 {s.get('symbol', 'N/A')}</span>
                     <span class="signal-score {score_class}">{score}/100</span>
                 </div>
-
-                <div class="signal-details">
-                    <div class="detail-box">
-                        <div class="detail-label">Entry Price</div>
-                        <div class="detail-value">${price:.6f}</div>
+                <div class="signal-grid">
+                    <div class="signal-stat">
+                        <div class="stat-label">Entry</div>
+                        <div class="stat-value">${s.get('price', 0):.6f}</div>
                     </div>
-                    <div class="detail-box">
-                        <div class="detail-label">Buy Pressure</div>
-                        <div class="detail-value green">{s.get('buy_pressure', 0)*100:.0f}%</div>
+                    <div class="signal-stat">
+                        <div class="stat-label">Volume</div>
+                        <div class="stat-value">{s.get('vol_ratio', 0):.1f}x</div>
                     </div>
-                </div>
-
-                <ul class="reasons-list">{reasons_html}</ul>
-
-                <div class="targets-grid">
-                    <div class="target-box tp">
-                        <div class="target-label">TP1</div>
-                        <div class="target-value" style="color:#10b981;">+{tp1_pct:.1f}%</div>
+                    <div class="signal-stat">
+                        <div class="stat-label">Buy Pressure</div>
+                        <div class="stat-value" style="color:var(--success);">{s.get('buy_pressure', 0)*100:.0f}%</div>
                     </div>
-                    <div class="target-box tp">
-                        <div class="target-label">TP2</div>
-                        <div class="target-value" style="color:#10b981;">+{tp2_pct:.1f}%</div>
-                    </div>
-                    <div class="target-box tp">
-                        <div class="target-label">TP3</div>
-                        <div class="target-value" style="color:#10b981;">+{tp3_pct:.1f}%</div>
-                    </div>
-                    <div class="target-box sl">
-                        <div class="target-label">SL</div>
-                        <div class="target-value" style="color:#ef4444;">-{sl_pct:.1f}%</div>
+                    <div class="signal-stat">
+                        <div class="stat-label">RSI</div>
+                        <div class="stat-value">{s.get('rsi', 0):.0f}</div>
                     </div>
                 </div>
-
-                <div class="signal-time">⏰ {time_str} UTC</div>
+                <div class="targets">
+                    <div class="target tp"><div class="target-label">TP1</div><div class="target-value" style="color:var(--success);">+{targets.get('tp1_pct', 0)}%</div></div>
+                    <div class="target tp"><div class="target-label">TP2</div><div class="target-value" style="color:var(--success);">+{targets.get('tp2_pct', 0)}%</div></div>
+                    <div class="target tp"><div class="target-label">TP3</div><div class="target-value" style="color:var(--success);">+{targets.get('tp3_pct', 0)}%</div></div>
+                    <div class="target sl"><div class="target-label">SL</div><div class="target-value" style="color:var(--danger);">-{targets.get('sl_pct', 0)}%</div></div>
+                </div>
+                <div class="signal-time">⏰ {time_str}</div>
             </div>
             """
 
+    # سجل المسح
+    logs_html = ""
+    for log in list(scan_logs)[-10:]:
+        level_class = f"log-{log['level'].lower()}"
+        logs_html += f'<div class="log-entry {level_class}">[{log["time"]}] {log["message"]}</div>'
+
     return render_template_string(f"""<!DOCTYPE html><html><head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Dashboard - TRADOVIP Pro</title>
-        {SHARED_STYLE}
-        <meta http-equiv="refresh" content="45">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    {SHARED_STYLE}
+    <meta http-equiv="refresh" content="30">
     </head><body>
-        <nav class="navbar">
-            <span class="logo">🐋 TRADOVIP Pro</span>
-            <a href="/logout" style="color:#ef4444;text-decoration:none;font-weight:600;font-size:0.9rem;">Logout</a>
-        </nav>
-        <div class="container">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-                <h2 style="margin:0;">Live Signals</h2>
-                <div style="display:flex;gap:10px;align-items:center;">
-                    <span class="btc-status {btc_class}">{btc_icon} BTC: {btc_status.upper()}</span>
-                    <span style="font-size:0.75rem;background:rgba(139,92,246,0.2);color:#8b5cf6;padding:4px 10px;border-radius:12px;font-weight:600;">🔴 LIVE</span>
-                </div>
+    <nav class="navbar">
+        <span class="logo">🐋 TRADOVIP V3</span>
+        <a href="/logout" style="color:var(--danger);text-decoration:none;font-weight:600;">Logout</a>
+    </nav>
+    <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">
+            <h2 style="margin:0;">Live Signals</h2>
+            <div style="display:flex;gap:8px;">
+                <span class="btc-badge {btc_class}">₿ {btc.upper()}</span>
+                <span style="background:rgba(239,68,68,0.2);color:#ef4444;padding:4px 10px;border-radius:6px;font-size:0.8rem;font-weight:600;">🔴 LIVE</span>
             </div>
-
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value">{len(signals_history)}</div>
-                    <div class="stat-label">Total Signals</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">7</div>
-                    <div class="stat-label">Active Indicators</div>
-                </div>
-            </div>
-
-            {signals_html}
-
-            <p style="text-align:center;font-size:0.8rem;color:var(--text-secondary);margin-top:30px;">
-                ⚠️ Not financial advice. Always use proper risk management (2-5% per trade).
-            </p>
         </div>
-    </body></html>""")
+
+        <div class="stats-grid">
+            <div class="stat-card"><div class="value">{len(signals_history)}</div><div class="label">Signals</div></div>
+            <div class="stat-card"><div class="value">{whale_hunter.coins_scanned}</div><div class="label">Coins Scanned</div></div>
+            <div class="stat-card"><div class="value">60s</div><div class="label">Interval</div></div>
+        </div>
+
+        {signals_html}
+
+        <div class="card">
+            <h3 style="margin-bottom:10px;font-size:0.9rem;">📋 Scan Log</h3>
+            <div class="log-box">{logs_html if logs_html else '<div style="color:var(--text-secondary);">Waiting for scan...</div>'}</div>
+        </div>
+
+        <p style="text-align:center;font-size:0.75rem;color:var(--text-secondary);margin-top:20px;">
+            ⚠️ Not financial advice. Use 2-5% per trade.
+        </p>
+    </div></body></html>""")
 
 @app.route('/logout')
 def logout():
@@ -957,20 +956,23 @@ def logout():
     return redirect('/')
 
 # ==========================================
-# 6. API ENDPOINTS (جديد)
+# 6. API
 # ==========================================
 @app.route('/api/signals')
 def api_signals():
-    """API للحصول على الإشارات"""
     return {
         "status": "ok",
-        "btc_trend": whale_hunter.btc_trend,
+        "btc": whale_hunter.btc_trend,
+        "btc_price": whale_hunter.btc_price,
         "signals_count": len(signals_history),
+        "coins_scanned": whale_hunter.coins_scanned,
+        "config": whale_hunter.CONFIG,
         "signals": [
             {
                 "symbol": s.get("symbol"),
                 "price": s.get("price"),
                 "score": s.get("score"),
+                "vol_ratio": s.get("vol_ratio"),
                 "buy_pressure": s.get("buy_pressure"),
                 "targets": s.get("targets"),
                 "time": s.get("time").isoformat() if s.get("time") else None
@@ -979,15 +981,10 @@ def api_signals():
         ]
     }
 
-@app.route('/api/status')
-def api_status():
-    """API لحالة النظام"""
+@app.route('/api/logs')
+def api_logs():
     return {
-        "status": "running",
-        "btc_trend": whale_hunter.btc_trend,
-        "btc_price": whale_hunter.btc_price,
-        "signals_today": len(signals_history),
-        "last_scan": datetime.now().isoformat()
+        "logs": list(scan_logs)[-30:]
     }
 
 if __name__ == "__main__":
