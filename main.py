@@ -203,13 +203,44 @@ t.start()
 # ==========================================
 # 3. EMAIL SERVICE
 # ==========================================
+# ==========================================
+# 2. خدمة البريد (تم إصلاحها لتظهر الأخطاء)
+# ==========================================
 def send_email(to, subject, html_content):
-    if not BREVO_API_KEY: return
+    print(f"📧 جاري محاولة إرسال إيميل إلى: {to}") # تسجيل بداية المحاولة
+    
+    if not BREVO_API_KEY: 
+        print("❌ خطأ: BREVO_API_KEY غير موجود في الإعدادات!")
+        return
+
     url = "https://api.brevo.com/v3/smtp/email"
-    headers = {"accept": "application/json", "api-key": BREVO_API_KEY, "content-type": "application/json"}
-    payload = {"sender": {"name": "TRADOVIP", "email": SENDER_EMAIL}, "to": [{"email": to}], "subject": subject, "htmlContent": html_content}
-    try: requests.post(url, data=json.dumps(payload), headers=headers)
-    except: pass
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+    
+    # التأكد من أن البريد المرسل هو نفسه الموجود في الإعدادات لتجنب الحظر
+    payload = {
+        "sender": {"name": "TRADOVIP Team", "email": SENDER_EMAIL},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html_content
+    }
+    
+    try:
+        # إزالة Threading مؤقتاً لنرى الخطأ مباشرة في السجلات
+        response = requests.post(url, data=json.dumps(payload), headers=headers)
+        
+        # طباعة رد Brevo في السجلات
+        print(f"📡 حالة الاستجابة: {response.status_code}")
+        if response.status_code == 201:
+            print("✅ تم الإرسال بنجاح!")
+        else:
+            print(f"❌ فشل الإرسال. رسالة Brevo: {response.text}")
+            
+    except Exception as e:
+        print(f"❌ خطأ في الاتصال: {e}")
 
 # ==========================================
 # 4. UI STYLES (Mobile First)
