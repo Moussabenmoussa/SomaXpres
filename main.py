@@ -101,9 +101,9 @@ def whale_radar():
                 
                 suspects = tickers[
                     (tickers['symbol'].str.endswith('USDT')) &
-                    (tickers['quoteVolume'] > 10000000) & 
+                    (tickers['quoteVolume'] > 3000000) & 
                     (tickers['priceChangePercent'] > -15) &
-                    (tickers['priceChangePercent'] < 3)
+                    (tickers['priceChangePercent'] < 10)
                 ]
                 
                 suspect_list = suspects['symbol'].tolist()
