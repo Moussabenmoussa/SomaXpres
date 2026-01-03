@@ -135,7 +135,7 @@ def whale_radar():
 
                         # The WHALE Formula 🐋
                         # Volume Spike (300%) AND (Green Candle OR Low RSI Recovery)
-                        if current_vol > (avg_vol * 3.0):
+                        if current_vol > (avg_vol * 1.0):
                             if (close_price > open_price) or (current_rsi > 30 and current_rsi < 60):
                                 
                                 # Check duplicate
