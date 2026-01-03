@@ -1,22 +1,16 @@
-import time
-import requests
-import threading
-import pandas as pd
-import numpy as np
 import os
-import random
 import json
-from flask import Flask, session, redirect, request, render_template_string
+import numpy as np
+from flask import Flask, session, redirect, request, render_template_string, jsonify
 from datetime import datetime
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
-from collections import deque
 
 # ==========================================
-# 1. SYSTEM CONFIGURATION
+# 1. CONFIGURATION
 # ==========================================
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "whale_hunter_lite")
+app.secret_key = os.getenv("SECRET_KEY", "hybrid_v1_secret")
 
 # Database
 mongo_uri = os.getenv("MONGO_URI")
@@ -33,306 +27,282 @@ if mongo_uri:
         print("✅ MongoDB Connected")
     except: print("❌ Database Error")
 
-# Services
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "support@tradovip.com")
+# Telegram & Email
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-
-signals_history = []
-scan_logs = deque(maxlen=50)
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 
 # ==========================================
-# 2. LIGHTWEIGHT WHALE HUNTER (RAM FRIENDLY)
+# 2. PYTHON ANALYZER (THE BRAIN)
 # ==========================================
-
-class WhaleHunterLite:
-    def __init__(self):
-        self.btc_trend = "neutral"
-        self.coins_scanned = 0
-        self.signal_cooldown = {}
+def calculate_indicators(closes, volumes):
+    """حساب المؤشرات رياضياً بدون مكتبات خارجية لتقليل الحمل"""
+    closes = np.array(closes, dtype=float)
+    volumes = np.array(volumes, dtype=float)
+    
+    # RSI Calculation
+    delta = np.diff(closes)
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    
+    avg_gain = np.mean(gain[-14:])
+    avg_loss = np.mean(loss[-14:])
+    
+    if avg_loss == 0:
+        rsi = 100
+    else:
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
         
-        # إعدادات متوازنة
-        self.CONFIG = {
-            "MIN_VOLUME": 3_000_000,    # 3 مليون حجم تداول
-            "VOL_SPIKE": 1.8,           # 1.8 ضعف المتوسط
-            "MIN_SCORE": 40,
-            "SCAN_DELAY": 60
-        }
-
-    def log(self, msg):
-        t = datetime.now().strftime("%H:%M:%S")
-        print(f"[{t}] {msg}")
-        scan_logs.append({"time": t, "message": msg})
-
-    def send_telegram(self, msg):
-        if not BOT_TOKEN or not CHAT_ID: return
-        try:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=5)
-        except: pass
-
-    def get_market_tickers(self):
-        """
-        نسخة خفيفة جداً لا تستخدم Pandas لتقليل استهلاك الذاكرة
-        """
-        try:
-            r = requests.get("https://api.binance.com/api/v3/ticker/24hr", timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                filtered = []
-                # الفلترة اليدوية السريعة
-                for item in data:
-                    symbol = item['symbol']
-                    if not symbol.endswith('USDT'): continue
-                    
-                    try:
-                        vol = float(item['quoteVolume'])
-                        change = float(item['priceChangePercent'])
-                        
-                        # شروط الفلترة الأولية
-                        if vol > self.CONFIG["MIN_VOLUME"] and -15 < change < 15:
-                            filtered.append({
-                                'symbol': symbol,
-                                'vol': vol,
-                                'change': change,
-                                'price': float(item['lastPrice'])
-                            })
-                    except: continue
-                
-                # ترتيب حسب الحجم واختيار أعلى 50 فقط لتوفير الذاكرة
-                filtered.sort(key=lambda x: x['vol'], reverse=True)
-                return filtered[:50]
-            return []
-        except Exception as e:
-            self.log(f"API Error: {e}")
-            return []
-
-    def get_candles(self, symbol):
-        try:
-            url = "https://api.binance.com/api/v3/klines"
-            # نطلب 50 شمعة فقط لتوفير الذاكرة
-            params = {'symbol': symbol, 'interval': '15m', 'limit': 50}
-            r = requests.get(url, params=params, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                df = pd.DataFrame(data, columns=['t', 'o', 'h', 'l', 'c', 'v', 'x', 'y', 'z', 'a', 'b', 'd'])
-                df['c'] = df['c'].astype(float) # Close
-                df['v'] = df['v'].astype(float) # Volume
-                df['h'] = df['h'].astype(float) # High
-                df['l'] = df['l'].astype(float) # Low
-                return df
-            return None
-        except: return None
-
-    def analyze_coin(self, symbol, df):
-        try:
-            # 1. تحليل الفوليوم
-            current_vol = df['v'].iloc[-1]
-            avg_vol = df['v'].iloc[-20:-1].mean()
-            
-            if avg_vol == 0: return None
-            vol_ratio = current_vol / avg_vol
-
-            if vol_ratio < self.CONFIG["VOL_SPIKE"]: return None
-
-            # 2. مؤشر RSI (يدوي سريع)
-            delta = df['c'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / (loss + 1e-10)
-            rsi = 100 - (100 / (1 + rs))
-            cur_rsi = rsi.iloc[-1]
-
-            # 3. حساب النقاط
-            score = 0
-            reasons = []
-            
-            if vol_ratio > 3: score += 30; reasons.append(f"🔥 Vol Spike {vol_ratio:.1f}x")
-            elif vol_ratio > 2: score += 20; reasons.append(f"📈 High Vol {vol_ratio:.1f}x")
-            
-            if cur_rsi < 30: score += 20; reasons.append(f"💎 Oversold RSI {cur_rsi:.0f}")
-            elif cur_rsi < 45: score += 10; reasons.append(f"📉 Low RSI {cur_rsi:.0f}")
-            
-            # سعر الإغلاق أعلى من الفتح (شمعة خضراء)
-            open_p = float(df['o'].iloc[-1])
-            close_p = float(df['c'].iloc[-1])
-            if close_p > open_p: score += 10; reasons.append("🟢 Green Candle")
-
-            if score >= self.CONFIG["MIN_SCORE"]:
-                # حساب الأهداف
-                price = close_p
-                tp1 = price * 1.02
-                tp2 = price * 1.05
-                sl = price * 0.97
-                
-                return {
-                    "symbol": symbol,
-                    "price": price,
-                    "score": score,
-                    "vol_ratio": vol_ratio,
-                    "rsi": cur_rsi,
-                    "tp1": tp1, "tp2": tp2, "sl": sl,
-                    "reasons": reasons,
-                    "time": datetime.now()
-                }
-            return None
-        except: return None
-
-    def run(self):
-        self.log("🚀 Lite Engine Started...")
-        self.send_telegram("✅ <b>Engine Restarted</b>\nOptimized for stability.")
+    # Volume Spike Calculation
+    current_vol = volumes[-1]
+    avg_vol = np.mean(volumes[-20:-1]) # متوسط آخر 20 شمعة
+    
+    vol_ratio = 0
+    if avg_vol > 0:
+        vol_ratio = current_vol / avg_vol
         
-        while True:
-            try:
-                # 1. جلب العملات (Light Request)
-                candidates = self.get_market_tickers()
-                self.coins_scanned = len(candidates)
-                
-                if not candidates:
-                    self.log("No candidates found, retrying...")
-                    time.sleep(30)
-                    continue
+    return rsi, vol_ratio
 
-                self.log(f"🔍 Scanning {len(candidates)} coins...")
-                
-                for coin in candidates:
-                    symbol = coin['symbol']
-                    
-                    # تجاوز إذا تم إرسالها قريباً
-                    if symbol in self.signal_cooldown:
-                        if (datetime.now() - self.signal_cooldown[symbol]).seconds < 3600:
-                            continue
-
-                    # فحص الشموع
-                    df = self.get_candles(symbol)
-                    if df is not None:
-                        signal = self.analyze_coin(symbol, df)
-                        
-                        if signal:
-                            # تسجيل وإرسال
-                            signals_history.insert(0, signal)
-                            if len(signals_history) > 20: signals_history.pop()
-                            
-                            self.signal_cooldown[symbol] = datetime.now()
-                            
-                            msg = f"""
-🐋 <b>WHALE ALERT</b>
-<b>#{symbol}</b>
-
-📊 Score: {signal['score']}
-📈 Vol: {signal['vol_ratio']:.1f}x
-📉 RSI: {signal['rsi']:.0f}
-
-💵 Entry: {signal['price']}
-🎯 TP1: {signal['tp1']:.4f}
-🛡 SL: {signal['sl']:.4f}
-                            """
-                            self.send_telegram(msg)
-                            self.log(f"✅ SIGNAL: {symbol}")
-                            
-                            # حفظ في قاعدة البيانات
-                            if signals_collection:
-                                try: signals_collection.insert_one(signal)
-                                except: pass
-
-                    time.sleep(0.5) # راحة لتجنب الحظر
-
-                self.log("💤 Scan finished, sleeping...")
-                time.sleep(self.CONFIG["SCAN_DELAY"])
-
-            except Exception as e:
-                self.log(f"Crash prevention: {e}")
-                time.sleep(10)
-
-# تشغيل المحرك
-bot = WhaleHunterLite()
-t = threading.Thread(target=bot.run)
-t.daemon = True
-t.start()
-
-# ==========================================
-# 3. EMAIL SERVICE
-# ==========================================
-def send_email(to, subject, html):
-    if not BREVO_API_KEY: return
+def send_telegram(msg):
+    if not BOT_TOKEN or not CHAT_ID: return
     try:
-        requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={"api-key": BREVO_API_KEY, "content-type": "application/json"},
-            data=json.dumps({"sender": {"name": "TRADOVIP", "email": SENDER_EMAIL}, "to": [{"email": to}], "subject": subject, "htmlContent": html}),
-            timeout=5
-        )
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=5)
     except: pass
 
 # ==========================================
-# 4. UI STYLES & ROUTES
+# 3. API ENDPOINTS (THE BRIDGE)
+# ==========================================
+
+@app.route('/api/analyze', methods=['POST'])
+def analyze_data():
+    """
+    هنا يستقبل البايثون البيانات من هاتفك ويحللها
+    """
+    try:
+        data = request.json
+        symbol = data.get('symbol')
+        closes = data.get('closes') # قائمة أسعار الإغلاق
+        volumes = data.get('volumes') # قائمة الأحجام
+        price = float(closes[-1])
+        
+        # 1. تشغيل المحرك التحليلي
+        rsi, vol_ratio = calculate_indicators(closes, volumes)
+        
+        # 2. شروط صيد الحيتان (Whale Logic)
+        # فوليوم عالي (> 2x) + RSI منخفض (< 45) يعني تجميع
+        if vol_ratio >= 2.0 and rsi < 45:
+            
+            # منع التكرار (نتحقق من قاعدة البيانات)
+            last_sig = None
+            if signals_collection:
+                last_sig = signals_collection.find_one(
+                    {"symbol": symbol}, 
+                    sort=[("time", -1)]
+                )
+            
+            # إذا لم تكن هناك إشارة حديثة (ساعة واحدة)
+            if not last_sig or (datetime.utcnow() - last_sig['time']).total_seconds() > 3600:
+                
+                # إعداد التوصية
+                tp1 = price * 1.02
+                sl = price * 0.97
+                
+                signal = {
+                    "symbol": symbol,
+                    "price": price,
+                    "vol_ratio": round(vol_ratio, 1),
+                    "rsi": round(rsi, 1),
+                    "tp1": tp1,
+                    "sl": sl,
+                    "time": datetime.utcnow()
+                }
+                
+                # حفظ وإرسال
+                if signals_collection:
+                    signals_collection.insert_one(signal)
+                
+                msg = f"""
+🐋 <b>HYBRID WHALE ALERT</b>
+<b>#{symbol}</b>
+
+📈 <b>Vol Spike:</b> {vol_ratio:.1f}x
+📉 <b>RSI:</b> {rsi:.0f} (Dip)
+
+💵 <b>Price:</b> ${price}
+🎯 <b>TP:</b> ${tp1:.4f}
+🛡 <b>SL:</b> ${sl:.4f}
+
+<i>Source: Mobile Proxy 📱</i>
+                """
+                send_telegram(msg)
+                
+                return jsonify({"status": "signal_found", "symbol": symbol})
+        
+        return jsonify({"status": "scanned", "vol": vol_ratio})
+
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)})
+
+@app.route('/api/signals/latest')
+def get_latest_signals():
+    """جلب آخر الإشارات لعرضها في الموقع"""
+    if not signals_collection: return jsonify([])
+    sigs = list(signals_collection.find({}, {'_id': 0}).sort("time", -1).limit(10))
+    return jsonify(sigs)
+
+# ==========================================
+# 4. FRONTEND (THE SPY 🕵️‍♂️)
 # ==========================================
 SHARED_STYLE = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    :root { --bg: #0f172a; --text: #f1f5f9; --card: #1e293b; --accent: #3b82f6; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-    .card { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #334155; }
-    .btn { background: var(--accent); color: white; padding: 10px; border-radius: 8px; text-decoration: none; display: block; text-align: center; font-weight: bold; border: none; width: 100%; cursor: pointer;}
-    input { width: 100%; padding: 10px; margin-bottom: 10px; background: #020617; border: 1px solid #334155; color: white; border-radius: 8px; box-sizing: border-box; }
-    .signal-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
-    .price { font-size: 1.2rem; font-weight: 800; color: #10b981; }
-    .log-box { background: #020617; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 150px; overflow-y: auto; color: #94a3b8; }
+    :root { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --accent: #3b82f6; --success: #10b981; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; text-align: center; }
+    .status-box { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; }
+    .pulse { width: 10px; height: 10px; background: var(--success); border-radius: 50%; display: inline-block; box-shadow: 0 0 0 rgba(16, 185, 129, 0.4); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    .log-area { font-family: monospace; font-size: 12px; color: #94a3b8; text-align: left; height: 150px; overflow-y: auto; background: #020617; padding: 10px; border-radius: 8px; }
+    .signal-card { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #3b82f6; padding: 15px; border-radius: 10px; margin-top: 10px; text-align: left; }
+    .btn { background: var(--accent); color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; margin-top: 10px; }
 </style>
 """
-
-@app.route('/')
-def home():
-    if 'user_id' in session: return redirect('/dashboard')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRADOVIP</title>{SHARED_STYLE}</head><body><div style="text-align:center;margin-top:50px;"><h1>TRADOVIP V3</h1><p>Smart Whale Tracker</p><br><a href="/login" class="btn">Login</a><br><a href="/signup" style="color:#94a3b8;">Create Account</a></div></body></html>""")
 
 @app.route('/dashboard')
 def dashboard():
     if 'user_id' not in session: return redirect('/login')
-    
-    sigs = ""
-    if not signals_history:
-        sigs = "<div style='text-align:center;color:#64748b;padding:20px;'>Scanning...</div>"
-    else:
-        for s in signals_history[:10]:
-            t = s['time'].strftime("%H:%M") if isinstance(s['time'], datetime) else "N/A"
-            sigs += f"""<div class="card"><div class="signal-header"><span>{s['symbol']}</span><span style="color:#f59e0b">Score: {s['score']}</span></div><div class="price">${s['price']}</div><div style="font-size:12px;color:#94a3b8;margin-top:5px;">Vol: {s['vol_ratio']:.1f}x | RSI: {s['rsi']:.0f} | {t}</div></div>"""
+    return render_template_string(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>TRADOVIP Hybrid</title>
+        {SHARED_STYLE}
+    </head>
+    <body>
+        <div class="status-box">
+            <h2>🐋 Hybrid Radar</h2>
+            <p><span class="pulse"></span> Connected via your Device</p>
+            <small style="color:#94a3b8">Keep this page open to scan market</small>
+        </div>
 
-    logs = "<br>".join([f"[{l['time']}] {l['message']}" for l in list(scan_logs)[-8:]])
+        <div id="signals-container">
+            <!-- Signals will appear here -->
+        </div>
 
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dash</title>{SHARED_STYLE}<meta http-equiv="refresh" content="30"></head><body>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;"><h3>Live Signals</h3><a href="/logout" style="color:#ef4444;">Exit</a></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
-        <div class="card" style="text-align:center;margin:0;"><div style="font-size:20px;font-weight:bold;">{len(signals_history)}</div><div style="font-size:12px;color:#94a3b8;">Signals</div></div>
-        <div class="card" style="text-align:center;margin:0;"><div style="font-size:20px;font-weight:bold;">{bot.coins_scanned}</div><div style="font-size:12px;color:#94a3b8;">Coins</div></div>
-    </div>
-    {sigs}
-    <h3>Logs</h3>
-    <div class="log-box">{logs}</div>
-    </body></html>""")
+        <h3>Live Logs</h3>
+        <div class="log-area" id="logs">Initializing Spy Module...</div>
+
+        <script>
+            // --- JAVASCRIPT SPY MODULE ---
+            
+            function log(msg) {{
+                const logs = document.getElementById('logs');
+                const time = new Date().toLocaleTimeString();
+                logs.innerHTML = `<div>[${{time}}] ${{msg}}</div>` + logs.innerHTML;
+            }}
+
+            async function fetchBinanceData() {{
+                try {{
+                    // 1. Get Top Volume Coins (The Funnel)
+                    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+                    const data = await r.json();
+                    
+                    // Filter: USDT pairs, Vol > 10M
+                    const targets = data.filter(t => 
+                        t.symbol.endsWith('USDT') && 
+                        parseFloat(t.quoteVolume) > 5000000 &&
+                        !t.symbol.includes('UP') && !t.symbol.includes('DOWN')
+                    ).sort((a,b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)).slice(0, 30);
+
+                    log(`Found ${{targets.length}} active coins. Scanning deep...`);
+
+                    // 2. Deep Scan each coin
+                    for (const coin of targets) {{
+                        await analyzeCoin(coin.symbol);
+                        await new Promise(r => setTimeout(r, 200)); // Delay to be safe
+                    }}
+                    
+                    log('Cycle complete. Waiting 60s...');
+
+                }} catch (e) {{
+                    log('Binance Error: ' + e.message);
+                }}
+            }}
+
+            async function analyzeCoin(symbol) {{
+                try {{
+                    // Get Candles (15m)
+                    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${{symbol}}&interval=15m&limit=30`);
+                    const klines = await r.json();
+                    
+                    const closes = klines.map(k => k[4]); // Close prices
+                    const volumes = klines.map(k => k[5]); // Volumes
+
+                    // Send to Server Brain
+                    const serverRes = await fetch('/api/analyze', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{ symbol, closes, volumes }})
+                    }});
+                    
+                    const resData = await serverRes.json();
+                    if(resData.status === 'signal_found') {{
+                        log(`🐋 WHALE FOUND: ${{symbol}}!`);
+                        loadSignals(); // Refresh UI
+                    }}
+
+                }} catch (e) {{
+                    // Ignore errors
+                }}
+            }}
+
+            async function loadSignals() {{
+                const r = await fetch('/api/signals/latest');
+                const sigs = await r.json();
+                const cont = document.getElementById('signals-container');
+                cont.innerHTML = sigs.map(s => `
+                    <div class="signal-card">
+                        <div style="font-weight:bold; font-size:1.2rem; color:#3b82f6">${{s.symbol}}</div>
+                        <div>Vol: ${{s.vol_ratio}}x | RSI: ${{s.rsi}}</div>
+                        <div style="margin-top:5px; color:#10b981">TP: ${{s.tp1.toFixed(4)}}</div>
+                    </div>
+                `).join('');
+            }}
+
+            // Start the Loop
+            setInterval(fetchBinanceData, 60000); // Run every minute
+            fetchBinanceData(); // Run immediately
+            loadSignals();
+        </script>
+    </body>
+    </html>
+    """)
+
+# --- Auth Routes (نفس السابق) ---
+@app.route('/')
+def index(): return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRADOVIP</title>{SHARED_STYLE}</head><body><div style="text-align:center;margin-top:50px;"><h1>TRADOVIP Hybrid</h1><p>Client-Side Scanning Technology</p><br><a href="/login" class="btn">Login</a><br><br><a href="/signup" style="color:#94a3b8;">Create Account</a></div></body></html>""")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email').strip().lower()
-        pwd = request.form.get('password')
-        u = users_collection.find_one({"email": email}) if users_collection else None
-        if u and check_password_hash(u['password'], pwd):
+        u = users_collection.find_one({"email": request.form.get('email').strip().lower()}) if users_collection else None
+        if u and check_password_hash(u['password'], request.form.get('password')):
             session['user_id'] = str(u['_id'])
             return redirect('/dashboard')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login</title>{SHARED_STYLE}</head><body><div class="card"><h2>Login</h2><form method="POST"><input name="email" placeholder="Email"><input type="password" name="password" placeholder="Pass"><button class="btn">Login</button></form></div></body></html>""")
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login</title>{SHARED_STYLE}</head><body><div class="status-box"><h2>Login</h2><form method="POST"><input name="email" placeholder="Email"><input type="password" name="password" placeholder="Pass"><button class="btn">Enter</button></form></div></body></html>""")
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     if request.method == 'POST':
         email = request.form.get('email').strip().lower()
-        pwd = request.form.get('password')
         if users_collection:
-            users_collection.insert_one({"email": email, "password": generate_password_hash(pwd), "status": "active"})
-            session['user_id'] = email # Auto login for simplicity
+            users_collection.insert_one({"email": email, "password": generate_password_hash(request.form.get('password')), "status": "active"})
+            session['user_id'] = email
             return redirect('/dashboard')
-    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign</title>{SHARED_STYLE}</head><body><div class="card"><h2>Sign Up</h2><form method="POST"><input name="email" placeholder="Email"><input type="password" name="password" placeholder="Pass"><button class="btn">Create</button></form></div></body></html>""")
+    return render_template_string(f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign</title>{SHARED_STYLE}</head><body><div class="status-box"><h2>Sign Up</h2><form method="POST"><input name="email" placeholder="Email"><input type="password" name="password" placeholder="Pass"><button class="btn">Create</button></form></div></body></html>""")
 
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
