@@ -1,0 +1,30 @@
+# Flask & Web
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+
+# Scheduling
+apscheduler==3.10.4
+
+# Binance API
+python-binance==1.0.19
+requests==2.31.0
+
+# Technical Analysis
+pandas==2.1.4
+numpy==1.26.2
+ta==0.11.0
+
+# Telegram
+python-telegram-bot==20.7
+
+# Database
+pymongo==4.6.1
+dnspython==2.4.2
+
+# Environment
+python-dotenv==1.0.0
+
+# Async
+aiohttp==3.9.1
+asyncio-throttle==1.0.2
