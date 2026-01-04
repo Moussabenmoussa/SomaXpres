@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Crypto Signals Bot | لوحة التحكم</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f2e;
+            --bg-card-hover: #242938;
+            --accent-green: #00ff88;
+            --accent-green-dim: #00ff8833;
+            --accent-red: #ff4757;
+            --accent-red-dim: #ff475733;
+            --accent-blue: #3b82f6;
+            --accent-yellow: #fbbf24;
+            --accent-purple: #a855f7;
+            --text-primary: #ffffff;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: #374151;
+            --gradient-1: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
+            --gradient-2: linear-gradient(135deg, #ff4757 0%, #ff6b81 100%);
+            --shadow-glow: 0 0 40px rgba(0, 255, 136, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(0, 255, 136, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+        }
+
+        /* Header */
+        .header {
+            background: rgba(17, 24, 39, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--gradient-1);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(0, 255, 136, 0); }
+        }
+
+        .logo-text h1 {
+            font-size: 1.5rem;
+            font-weight: 900;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo-text span {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .status-badges {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border-radius: 50px;
+            font-size: 0.875rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .badge.live {
+            border-color: var(--accent-green);
+        }
+
+        .badge.live::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Main Content */
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-green);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .stat-card .icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card .icon.green { background: var(--accent-green-dim); color: var(--accent-green); }
+        .stat-card .icon.red { background: var(--accent-red-dim); color: var(--accent-red); }
+        .stat-card .icon.blue { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+        .stat-card .icon.yellow { background: rgba(251, 191, 36, 0.2); color: var(--accent-yellow); }
+
+        .stat-card h3 {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 900;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .stat-card .change {
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        .stat-card .change.positive { color: var(--accent-green); }
+        .stat-card .change.negative { color: var(--accent-red); }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 50px;
+            color: var(--text-secondary);
+            font-family: 'Cairo', sans-serif;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent-green);
+            color: var(--text-primary);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            color: var(--bg-primary);
+            font-weight: 600;
+        }
+
+        .filter-btn.long.active {
+            background: var(--accent-green);
+        }
+
+        .filter-btn.short.active {
+            background: var(--accent-red);
+        }
+
+        /* Signals Table */
+        .signals-section {
+            background: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-header h2 {
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .refresh-btn {
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-family: 'Cairo', sans-serif;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            border-color: var(--accent-green);
+        }
+
+        .refresh-btn.loading i {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Signal Cards */
+        .signals-grid {
+            display: grid;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+
+        .signal-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .signal-card:hover {
+            transform: translateX(-4px);
+            border-color: var(--accent-blue);
+        }
+
+        .signal-card.long {
+            border-right: 4px solid var(--accent-green);
+        }
+
+        .signal-card.short {
+            border-right: 4px solid var(--accent-red);
+        }
+
+        .signal-type {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+
+        .signal-type.long {
+            background: var(--accent-green-dim);
+            color: var(--accent-green);
+        }
+
+        .signal-type.short {
+            background: var(--accent-red-dim);
+            color: var(--accent-red);
+        }
+
+        .signal-type i {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .signal-info {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .signal-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .signal-symbol {
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .signal-badges {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .signal-badge {
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-card);
+            border-radius: 50px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .signal-badge.spot { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+        .signal-badge.futures { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); }
+
+        .signal-prices {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+            font-size: 0.875rem;
+        }
+
+        .price-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .price-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .price-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .price-value.entry { color: var(--text-primary); }
+        .price-value.sl { color: var(--accent-red); }
+        .price-value.tp { color: var(--accent-green); }
+
+        .signal-strength {
+            text-align: center;
+        }
+
+        .strength-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: conic-gradient(
+                var(--accent-green) calc(var(--strength) * 1%),
+                var(--bg-card) calc(var(--strength) * 1%)
+            );
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .strength-circle::before {
+            content: '';
+            width: 60px;
+            height: 60px;
+            background: var(--bg-secondary);
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        .strength-value {
+            position: relative;
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .strength-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem;
+        }
+
+        .loader {
+            width: 50px;
+            height: 50px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-green);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .signal-card {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .signal-type {
+                margin: 0 auto;
+            }
+
+            .signal-prices {
+                justify-content: center;
+            }
+
+            .strength-circle {
+                margin: 0 auto;
+            }
+
+            .main {
+                padding: 1rem;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🚀</div>
+                <div class="logo-text">
+                    <h1>Crypto Signals</h1>
+                    <span>توصيات تداول احترافية</span>
+                </div>
+            </div>
+            <div class="status-badges">
+                <div class="badge live" id="statusBadge">
+                    <span>متصل</span>
+                </div>
+                <div class="badge">
+                    <i class="fas fa-clock"></i>
+                    <span id="lastUpdate">--:--</span>
+                </div>
+                <div class="badge">
+                    <i class="fas fa-coins"></i>
+                    <span>Top 50</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="icon green"><i class="fas fa-signal"></i></div>
+                <h3>إجمالي الإشارات</h3>
+                <div class="value" id="totalSignals">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon green"><i class="fas fa-arrow-trend-up"></i></div>
+                <h3>إشارات شراء</h3>
+                <div class="value" id="longSignals">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon red"><i class="fas fa-arrow-trend-down"></i></div>
+                <h3>إشارات بيع</h3>
+                <div class="value" id="shortSignals">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon yellow"><i class="fas fa-fire"></i></div>
+                <h3>متوسط القوة</h3>
+                <div class="value" id="avgStrength">0%</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <button class="filter-btn active" data-filter="all">
+                <i class="fas fa-layer-group"></i> الكل
+            </button>
+            <button class="filter-btn long" data-filter="long">
+                <i class="fas fa-arrow-up"></i> شراء فقط
+            </button>
+            <button class="filter-btn short" data-filter="short">
+                <i class="fas fa-arrow-down"></i> بيع فقط
+            </button>
+            <button class="filter-btn" data-filter="strong">
+                <i class="fas fa-fire"></i> القوية فقط (+80%)
+            </button>
+        </div>
+
+        <div class="signals-section">
+            <div class="section-header">
+                <h2>
+                    <i class="fas fa-chart-line"></i>
+                    أحدث الإشارات
+                </h2>
+                <button class="refresh-btn" id="refreshBtn">
+                    <i class="fas fa-sync-alt"></i>
+                    تحديث
+                </button>
+            </div>
+            <div class="signals-grid" id="signalsGrid">
+                <div class="loading-overlay">
+                    <div class="loader"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>⚠️ تنبيه: هذه توصيات للتحليل فقط وليست نصيحة مالية. تداول بمسؤولية.</p>
+        <p style="margin-top: 0.5rem;">🤖 Crypto Signals Bot | Powered by Binance API</p>
+    </footer>
+
+    <script>
+        // State
+        let signals = [];
+        let currentFilter = 'all';
+        let isLoading = false;
+
+        // DOM Elements
+        const signalsGrid = document.getElementById('signalsGrid');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const statusBadge = document.getElementById('statusBadge');
+        const lastUpdateEl = document.getElementById('lastUpdate');
+
+        // Filter buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                renderSignals();
+            });
+        });
+
+        // Refresh button
+        refreshBtn.addEventListener('click', fetchSignals);
+
+        // Fetch signals from API
+        async function fetchSignals() {
+            if (isLoading) return;
+
+            isLoading = true;
+            refreshBtn.classList.add('loading');
+
+            try {
+                const response = await fetch('/api/signals');
+                const data = await response.json();
+
+                signals = data.signals || [];
+                updateStats();
+                renderSignals();
+
+                // Update last update time
+                const now = new Date();
+                lastUpdateEl.textContent = now.toLocaleTimeString('ar-EG');
+
+                statusBadge.querySelector('span').textContent = 'متصل';
+                statusBadge.classList.add('live');
+
+            } catch (error) {
+                console.error('Error fetching signals:', error);
+                statusBadge.querySelector('span').textContent = 'غير متصل';
+                statusBadge.classList.remove('live');
+            } finally {
+                isLoading = false;
+                refreshBtn.classList.remove('loading');
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const total = signals.length;
+            const longCount = signals.filter(s => s.type === 'LONG').length;
+            const shortCount = signals.filter(s => s.type === 'SHORT').length;
+            const avgStrength = total > 0
+                ? Math.round(signals.reduce((sum, s) => sum + s.strength, 0) / total)
+                : 0;
+
+            document.getElementById('totalSignals').textContent = total;
+            document.getElementById('longSignals').textContent = longCount;
+            document.getElementById('shortSignals').textContent = shortCount;
+            document.getElementById('avgStrength').textContent = avgStrength + '%';
+        }
+
+        // Render signals
+        function renderSignals() {
+            let filtered = [...signals];
+
+            // Apply filter
+            switch (currentFilter) {
+                case 'long':
+                    filtered = filtered.filter(s => s.type === 'LONG');
+                    break;
+                case 'short':
+                    filtered = filtered.filter(s => s.type === 'SHORT');
+                    break;
+                case 'strong':
+                    filtered = filtered.filter(s => s.strength >= 80);
+                    break;
+            }
+
+            if (filtered.length === 0) {
+                signalsGrid.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-search"></i>
+                        <h3>لا توجد إشارات</h3>
+                        <p>لم يتم العثور على إشارات تطابق الفلتر المحدد</p>
+                    </div>
+                `;
+                return;
+            }
+
+            signalsGrid.innerHTML = filtered.map(signal => createSignalCard(signal)).join('');
+        }
+
+        // Create signal card HTML
+        function createSignalCard(signal) {
+            const isLong = signal.type === 'LONG';
+            const typeClass = isLong ? 'long' : 'short';
+            const typeIcon = isLong ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+            const typeText = isLong ? 'LONG' : 'SHORT';
+
+            return `
+                <div class="signal-card ${typeClass}">
+                    <div class="signal-type ${typeClass}">
+                        <i class="fas ${typeIcon}"></i>
+                        ${typeText}
+                    </div>
+                    <div class="signal-info">
+                        <div class="signal-header">
+                            <span class="signal-symbol">${signal.symbol}</span>
+                            <div class="signal-badges">
+                                <span class="signal-badge ${signal.market.toLowerCase()}">${signal.market}</span>
+                                <span class="signal-badge">${signal.timeframe}</span>
+                            </div>
+                        </div>
+                        <div class="signal-prices">
+                            <div class="price-item">
+                                <span class="price-label">الدخول</span>
+                                <span class="price-value entry">$${formatNumber(signal.entry)}</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">وقف الخسارة</span>
+                                <span class="price-value sl">$${formatNumber(signal.stop_loss)}</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">الهدف 1</span>
+                                <span class="price-value tp">$${formatNumber(signal.take_profit_1)}</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">الهدف 2</span>
+                                <span class="price-value tp">$${formatNumber(signal.take_profit_2)}</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">R/R</span>
+                                <span class="price-value entry">1:${signal.risk_reward}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="signal-strength">
+                        <div class="strength-circle" style="--strength: ${signal.strength}">
+                            <span class="strength-value">${signal.strength}%</span>
+                        </div>
+                        <div class="strength-label">قوة الإشارة</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format number
+        function formatNumber(num) {
+            if (num >= 1000) {
+                return num.toLocaleString('en-US', { maximumFractionDigits: 2 });
+            } else if (num >= 1) {
+                return num.toFixed(4);
+            } else {
+                return num.toFixed(6);
+            }
+        }
+
+        // Initial fetch
+        fetchSignals();
+
+        // Auto-refresh every 60 seconds
+        setInterval(fetchSignals, 60000);
+    </script>
+</body>
+</html>
