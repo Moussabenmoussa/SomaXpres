@@ -1,7 +1,0 @@
-Flask
-requests
-gunicorn
-pymongo
-dnspython
-numpy
-werkzeug
