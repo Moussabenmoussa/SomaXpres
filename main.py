@@ -7,7 +7,7 @@ from groq import Groq # 🧠 استدعاء الذكاء الاصطناعي
 
 # ---------------- إعدادات المفاتيح ----------------
 BOT_TOKEN = "8454394574:AAFKylU8ZnQjp9-3oCksAIxaOEEB1oJ9goU"
-CHAT_ID = "1413638026"
+CHAT_ID = "-1002345127019"
 # مفتاح Groq الذي أرسلتَه لي 👇
 GROQ_API_KEY = "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"
 
