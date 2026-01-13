@@ -3,3 +3,6 @@ uvicorn
 groq
 aiohttp
 pydantic
+motor
+dnspython
+python-dotenv
