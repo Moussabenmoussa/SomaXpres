@@ -1,26 +1,22 @@
 import asyncio
 import json
-import os
 import aiohttp
 from groq import Groq
 from pydantic import BaseModel
-from typing import Optional
-from scout import AssetData # استيراد هيكلية البيانات من ملف الرادار
+from scout import AssetData
 
 # ================= إعدادات المحلل =================
-# نستخدم المفاتيح التي زودتني بها (للتجربة المباشرة)
 API_KEY_GROQ = "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"
 API_KEY_SERPER = "a0ff8f3b86f02f586ee6dfef6fcefcb95bb7e650"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
-# ================= نموذج المخرجات (Structured Alpha) =================
-# هذا هو الشكل الذي سيظهر في جدول الواجهة (Nansen Style)
 class AlphaSignal(BaseModel):
     asset_symbol: str
-    signal: str          # BULLISH, BEARISH, NEUTRAL, SCAM_ALERT
-    severity: str        # HIGH, MEDIUM, LOW
-    headline: str        # جملة واحدة قصيرة جداً للجدول
-    full_report: str     # التقرير التفصيلي (Markdown)
+    signal: str
+    severity: str        # HIGH (Scam), MEDIUM (Risky), LOW (Safe)
+    headline: str
+    full_report: str
+    audit_data: dict     # <--- البيانات الحقيقية من فحص العقد
 
 class InstitutionalAnalyst:
     def __init__(self):
@@ -28,10 +24,41 @@ class InstitutionalAnalyst:
         self.serper_key = API_KEY_SERPER
         self.model = MODEL_NAME
 
-    async def _search_intel(self, query: str) -> str:
-        """البحث عن المعلومات الحصرية (آخر 24 ساعة)"""
+    async def _check_contract_security(self, chain_id: str, address: str) -> dict:
+        """
+        فحص أمني حقيقي للعقد الذكي باستخدام GoPlus Security API.
+        هذه بيانات حقيقية 100% وليست تخمينات.
+        """
+        # توحيد أسماء الشبكات لتناسب API
+        chain_map = {"solana": "solana", "ethereum": "1", "bsc": "56", "base": "8453"}
+        chain_id_code = chain_map.get(chain_id.lower(), "1") # الافتراضي إيثريوم
+
+        url = f"https://api.gopluslabs.io/api/v1/token_security/{chain_id_code}?contract_addresses={address}"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    # استخراج نتائج الفحص
+                    result = data.get("result", {}).get(address.lower(), {})
+                    
+                    # استخلاص الحقائق القاتلة (Red Flags)
+                    risk_report = {
+                        "is_honeypot": str(result.get("is_honeypot", "0")) == "1", # هل هي فخ؟
+                        "is_mintable": str(result.get("is_mintable", "0")) == "1", # هل يمكن طباعة المزيد؟
+                        "owner_balance": result.get("owner_balance", "Unknown"),   # كم يملك المطور؟
+                        "is_open_source": str(result.get("is_open_source", "0")) == "1",
+                        "buy_tax": result.get("buy_tax", "0"), # ضريبة الشراء
+                        "sell_tax": result.get("sell_tax", "0") # ضريبة البيع
+                    }
+                    return risk_report
+        except:
+            return {"error": "Security data unavailable"}
+
+    async def _search_news(self, query: str) -> str:
+        """بحث عن الأخبار التكميلية"""
         url = "https://google.serper.dev/search"
-        payload = json.dumps({"q": query, "num": 5, "tbs": "qdr:d"}) 
+        payload = json.dumps({"q": query, "num": 4, "tbs": "qdr:d"}) 
         headers = {'X-API-KEY': self.serper_key, 'Content-Type': 'application/json'}
         try:
             async with aiohttp.ClientSession() as session:
@@ -43,48 +70,53 @@ class InstitutionalAnalyst:
                             results.append(f"- {item.get('title')}: {item.get('snippet')}")
                     return "\n".join(results)
         except:
-            return "No specific intel found."
+            return ""
 
     async def analyze_asset(self, asset: AssetData) -> AlphaSignal:
-        """
-        تحليل أصل واحد بعمق واستخراج إشارات مؤسساتية
-        """
-        print(f"🧠 [ANALYST] Deep diving into: {asset.symbol}...")
+        print(f"🛡️ [AUDITOR] Running Security Check on: {asset.symbol}...")
 
-        # 1. البحث الاستراتيجي (Sniper Queries)
-        # نبحث عن أشياء محددة جداً
+        # 1. الخطوة الأولى: الفحص الأمني الحقيقي (The Real Value)
+        security_audit = await self._check_contract_security(asset.chain, asset.pair_address)
+
+        # 2. الخطوة الثانية: بحث الأخبار
         queries = [
-            f"{asset.symbol} crypto insider selling rumors today",
-            f"{asset.symbol} token unlock schedule upcoming",
-            f"{asset.symbol} major partnership announcement leaked"
+            f"{asset.symbol} crypto project scam accusations",
+            f"{asset.symbol} official twitter announcement",
+            f"{asset.symbol} token huge whale activity"
         ]
-        
-        # تنفيذ البحث المتوازي للسرعة
-        tasks = [self._search_intel(q) for q in queries]
+        tasks = [self._search_news(q) for q in queries]
         search_results = await asyncio.gather(*tasks)
-        intel_data = "\n".join(search_results)
+        news_data = "\n".join(search_results)
 
-        # 2. التحليل وإصدار الحكم (Judgment Day)
-        # نطلب من Llama إرجاع JSON حصراً
+        # 3. التحليل النهائي: دمج التدقيق الأمني مع الأخبار
         prompt = f"""
-        ACT AS AN ELITE CRYPTO HEDGE FUND ANALYST.
+        ACT AS A CRYPTO RISK AUDITOR (Institutional Grade).
         
         ASSET: {asset.symbol}
-        PRICE: ${asset.price_usd}
-        VOL: ${asset.volume_24h}
         
-        INTEL GATHERED (Last 24h):
-        {intel_data}
+        🚨 SECURITY AUDIT (REAL ON-CHAIN FACTS):
+        - Is Honeypot (Can't sell): {security_audit.get('is_honeypot')}
+        - Mintable (Infinite Supply Risk): {security_audit.get('is_mintable')}
+        - Buy/Sell Tax: {security_audit.get('buy_tax')}% / {security_audit.get('sell_tax')}%
+        - Code Open Source: {security_audit.get('is_open_source')}
+        
+        📰 MARKET METRICS & NEWS:
+        - Liquidity: ${asset.liquidity_usd:,.0f}
+        - Search Intel: {news_data}
         
         --------------------------------
-        YOUR MISSION:
-        Analyze the intel. Decide the signal. 
-        Output valid JSON only matching this schema:
+        YOUR VERDICT:
+        Base your signal PRIMARILY on the Security Audit.
+        - If Honeypot OR Mintable = "SCAM ALERT" (Severity: HIGH).
+        - If Taxes > 10% = "HIGH RISK" (Severity: HIGH).
+        - If Security is clean AND News is good = "SAFE / BUY".
+        
+        OUTPUT JSON ONLY:
         {{
-            "signal": "BULLISH" | "BEARISH" | "NEUTRAL" | "HIGH_RISK",
+            "signal": "SAFE" | "CAUTION" | "DANGEROUS" | "SCAM DETECTED",
             "severity": "HIGH" | "MEDIUM" | "LOW",
-            "headline": "Short summary (max 6 words)",
-            "full_report": "Detailed markdown report focusing on risks and catalysts."
+            "headline": "Example: 🟢 Code Clean + High Liquidity",
+            "full_report": "Markdown. \n- Start with '🛡️ Security Audit' section listing the risks found.\n- Then '📰 Market Analysis'.\n- Final Verdict."
         }}
         """
         
@@ -92,59 +124,26 @@ class InstitutionalAnalyst:
             response = self.groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model=self.model,
-                response_format={"type": "json_object"}, # نجبره على JSON
-                temperature=0.3
+                response_format={"type": "json_object"},
+                temperature=0.1 # دقة عالية جداً (لا إبداع في المخاطر)
             )
-            
             result_json = json.loads(response.choices[0].message.content)
             
             return AlphaSignal(
                 asset_symbol=asset.symbol,
-                signal=result_json.get("signal", "NEUTRAL"),
-                severity=result_json.get("severity", "LOW"),
-                headline=result_json.get("headline", "No major signals"),
-                full_report=result_json.get("full_report", "Analysis complete.")
+                signal=result_json.get("signal", "CAUTION"),
+                severity=result_json.get("severity", "MEDIUM"),
+                headline=result_json.get("headline", "Audit Complete"),
+                full_report=result_json.get("full_report", "Report ready."),
+                audit_data=security_audit
             )
             
         except Exception as e:
-            # في حال حدوث خطأ، نعيد نتيجة فارغة بدلاً من تحطيم النظام
             return AlphaSignal(
                 asset_symbol=asset.symbol,
-                signal="ERROR",
+                signal="UNKNOWN",
                 severity="LOW",
-                headline="Analysis Failed",
-                full_report=str(e)
+                headline="Audit Error",
+                full_report=str(e),
+                audit_data={}
             )
-
-# ================= اختبار التكامل (Integration Test) =================
-if __name__ == "__main__":
-    from scout import MarketRadar # نستدعي الرادار الذي بنيناه سابقاً
-    
-    async def run_pipeline():
-        # 1. تشغيل الرادار لجلب العملات
-        radar = MarketRadar()
-        print("📡 Launching Scout...")
-        # سنجرب على عملة واحدة لتوفير الوقت في الاختبار
-        assets = await radar.scan_market(["Pepe"]) 
-        
-        if not assets:
-            print("No assets found.")
-            return
-
-        target_asset = assets[0] # نأخذ أول عملة وجدها الرادار
-        print(f"🎯 Target Acquired: {target_asset.name} (${target_asset.price_usd})")
-
-        # 2. تشغيل المحلل
-        analyst = InstitutionalAnalyst()
-        result = await analyst.analyze_asset(target_asset)
-        
-        # 3. عرض النتيجة كما ستظهر في لوحة التحكم (Dashboard)
-        print("\n" + "="*50)
-        print("🖥️  DASHBOARD ROW PREVIEW")
-        print("="*50)
-        print(f"| {result.asset_symbol:<6} | {result.signal:<10} | {result.severity:<8} | {result.headline}")
-        print("-" * 50)
-        print("\n📄 FULL REPORT PREVIEW:\n")
-        print(result.full_report)
-
-    asyncio.run(run_pipeline())
