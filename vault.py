@@ -4,22 +4,28 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from scout import AssetData
 from analyst import AlphaSignal
 
-# محاولة الاتصال بـ MongoDB (إذا وجد الرابط في البيئة)
+# التحقق من وجود الرابط قبل الاتصال
 MONGO_URI = os.getenv("MONGO_URI")
-DB_CLIENT = AsyncIOMotorClient(MONGO_URI) if MONGO_URI else None
+# تأكد أن الرابط ليس فارغاً وليس كلمة Localhost
+DB_CLIENT = AsyncIOMotorClient(MONGO_URI) if (MONGO_URI and "mongodb" in MONGO_URI) else None
 
 class AlphaVault:
     def __init__(self):
         self.collection = None
+        self.in_memory_db = {} # الذاكرة المؤقتة (للهاتف والتجربة)
+
         if DB_CLIENT:
-            db = DB_CLIENT["institutional_intel_db"]
-            self.collection = db["alpha_reports"]
-        else:
-            print("⚠️ [VAULT] Running in InMemory Mode (No MongoDB detected). Data will be lost on restart.")
-            self.in_memory_db = {} # مخزن مؤقت للتجربة
+            try:
+                db = DB_CLIENT["institutional_intel_db"]
+                self.collection = db["alpha_reports"]
+            except:
+                self.collection = None
+        
+        if self.collection is None:
+            print("⚠️ [VAULT] Running in Memory Mode (Phone/Demo).")
 
     async def save_intel(self, asset: AssetData, signal: AlphaSignal):
-        """حفظ أو تحديث تقرير العملة"""
+        """حفظ التقرير"""
         record = {
             "symbol": asset.symbol,
             "name": asset.name,
@@ -31,20 +37,27 @@ class AlphaVault:
             "updated_at": datetime.datetime.utcnow()
         }
 
-        if self.collection:
-            # Upsert: تحديث القديم أو إنشاء جديد
-            await self.collection.update_one(
-                {"symbol": asset.symbol},
-                {"$set": record},
-                upsert=True
-            )
+        # التصحيح هنا: نستخدم is not None
+        if self.collection is not None:
+            try:
+                await self.collection.update_one(
+                    {"symbol": asset.symbol},
+                    {"$set": record},
+                    upsert=True
+                )
+            except:
+                self.in_memory_db[asset.symbol] = record
         else:
             self.in_memory_db[asset.symbol] = record
 
     async def get_latest_feed(self):
-        """جلب كل التقارير لواجهة المستخدم"""
-        if self.collection:
-            cursor = self.collection.find({}).sort("updated_at", -1)
-            return await cursor.to_list(length=100)
+        """جلب البيانات"""
+        # التصحيح هنا أيضاً
+        if self.collection is not None:
+            try:
+                cursor = self.collection.find({}).sort("updated_at", -1)
+                return await cursor.to_list(length=100)
+            except:
+                return list(self.in_memory_db.values())
         else:
             return list(self.in_memory_db.values())
