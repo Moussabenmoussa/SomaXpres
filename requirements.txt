@@ -6,3 +6,4 @@ pydantic
 motor
 dnspython
 python-dotenv
+gunicorn
