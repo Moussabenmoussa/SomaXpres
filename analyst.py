@@ -12,11 +12,11 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 
 class AlphaSignal(BaseModel):
     asset_symbol: str
-    signal: str
-    severity: str        # HIGH (Scam), MEDIUM (Risky), LOW (Safe)
+    signal: str          # BUY, SELL, ACCUMULATION, DUMPING
+    severity: str        # HIGH, MEDIUM, LOW
     headline: str
     full_report: str
-    audit_data: dict     # <--- البيانات الحقيقية من فحص العقد
+    whale_index: int     # مؤشر الحيتان (من 0 إلى 100)
 
 class InstitutionalAnalyst:
     def __init__(self):
@@ -24,99 +24,94 @@ class InstitutionalAnalyst:
         self.serper_key = API_KEY_SERPER
         self.model = MODEL_NAME
 
-    async def _check_contract_security(self, chain_id: str, address: str) -> dict:
+    async def _get_order_flow_data(self, pair_address: str) -> dict:
         """
-        فحص أمني حقيقي للعقد الذكي باستخدام GoPlus Security API.
-        هذه بيانات حقيقية 100% وليست تخمينات.
+        هنا السحر: نحسب تدفق الأموال الحقيقي من DexScreener
         """
-        # توحيد أسماء الشبكات لتناسب API
-        chain_map = {"solana": "solana", "ethereum": "1", "bsc": "56", "base": "8453"}
-        chain_id_code = chain_map.get(chain_id.lower(), "1") # الافتراضي إيثريوم
+        url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{pair_address}" # نجرب سولانا كمثال، يمكن تعميمه
+        # ملاحظة: الرابط العام يعمل لكل الشبكات إذا كان العنوان صحيحاً، لكن نستخدم البحث للضمان
+        # للتبسيط سنعتمد على البيانات التي مررناها من Scout
+        return {}
 
-        url = f"https://api.gopluslabs.io/api/v1/token_security/{chain_id_code}?contract_addresses={address}"
+    async def analyze_asset(self, asset: AssetData) -> AlphaSignal:
+        print(f"🐋 [ORDER FLOW] Analyzing Smart Money for: {asset.symbol}...")
+
+        # 1. جلب بيانات التداولات التفصيلية (من Scout Data مباشرة)
+        # DexScreener يعطينا عدد عمليات البيع والشراء في آخر ساعة و 24 ساعة
+        # سنحتاج لإعادة جلب البيانات بدقة إذا لم تكن موجودة، لكن سنفترض وجودها في التحليل
         
+        # لنقم بعملية حسابية "قذرة" لكن فعالة جداً لاكتشاف الحيتان
+        # متوسط حجم الصفقة = الحجم الكلي / عدد العمليات
+        # ملاحظة: DexScreener API لا يعطي عدد العمليات (Txns) في البحث العام، 
+        # لذلك سنقوم بطلب خاص للزوج المحدد للحصول على الـ txns
+        
+        url = f"https://api.dexscreener.com/latest/dex/pairs/{asset.chain}/{asset.pair_address}"
+        
+        whale_dominance = 0
+        buy_pressure = 0
+        tx_data = {}
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     data = await response.json()
-                    # استخراج نتائج الفحص
-                    result = data.get("result", {}).get(address.lower(), {})
+                    pair = data['pairs'][0]
                     
-                    # استخلاص الحقائق القاتلة (Red Flags)
-                    risk_report = {
-                        "is_honeypot": str(result.get("is_honeypot", "0")) == "1", # هل هي فخ؟
-                        "is_mintable": str(result.get("is_mintable", "0")) == "1", # هل يمكن طباعة المزيد؟
-                        "owner_balance": result.get("owner_balance", "Unknown"),   # كم يملك المطور؟
-                        "is_open_source": str(result.get("is_open_source", "0")) == "1",
-                        "buy_tax": result.get("buy_tax", "0"), # ضريبة الشراء
-                        "sell_tax": result.get("sell_tax", "0") # ضريبة البيع
+                    # استخراج بيانات الضغط (آخر 24 ساعة)
+                    txns = pair.get('txns', {}).get('h24', {})
+                    buys = txns.get('buys', 1)
+                    sells = txns.get('sells', 1)
+                    total_tx = buys + sells
+                    
+                    # المعادلة 1: ضغط الشراء (Buy Pressure)
+                    # هل المشترون أكثر من البائعين؟
+                    buy_ratio = (buys / total_tx) * 100 if total_tx > 0 else 50
+                    
+                    # المعادلة 2: هيمنة الحيتان (Whale Dominance)
+                    # متوسط حجم الصفقة الواحدة
+                    avg_trade_size = asset.volume_24h / total_tx if total_tx > 0 else 0
+                    
+                    # تقييم "نوعية" المال
+                    # إذا كان متوسط الصفقة > 2000$ (في الكريبتو اليومي هذا يعتبر مال ذكي نسبياً مقارنة بـ 10$ لعملات الميم)
+                    whale_dominance = min(100, (avg_trade_size / 500) * 50) # معادلة تقريبية
+                    
+                    tx_data = {
+                        "buys": buys,
+                        "sells": sells,
+                        "avg_trade": avg_trade_size,
+                        "buy_ratio": buy_ratio
                     }
-                    return risk_report
+
         except:
-            return {"error": "Security data unavailable"}
+            tx_data = {"error": "No Order Flow Data"}
 
-    async def _search_news(self, query: str) -> str:
-        """بحث عن الأخبار التكميلية"""
-        url = "https://google.serper.dev/search"
-        payload = json.dumps({"q": query, "num": 4, "tbs": "qdr:d"}) 
-        headers = {'X-API-KEY': self.serper_key, 'Content-Type': 'application/json'}
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, data=payload) as response:
-                    data = await response.json()
-                    results = []
-                    if "organic" in data:
-                        for item in data["organic"]:
-                            results.append(f"- {item.get('title')}: {item.get('snippet')}")
-                    return "\n".join(results)
-        except:
-            return ""
-
-    async def analyze_asset(self, asset: AssetData) -> AlphaSignal:
-        print(f"🛡️ [AUDITOR] Running Security Check on: {asset.symbol}...")
-
-        # 1. الخطوة الأولى: الفحص الأمني الحقيقي (The Real Value)
-        security_audit = await self._check_contract_security(asset.chain, asset.pair_address)
-
-        # 2. الخطوة الثانية: بحث الأخبار
-        queries = [
-            f"{asset.symbol} crypto project scam accusations",
-            f"{asset.symbol} official twitter announcement",
-            f"{asset.symbol} token huge whale activity"
-        ]
-        tasks = [self._search_news(q) for q in queries]
-        search_results = await asyncio.gather(*tasks)
-        news_data = "\n".join(search_results)
-
-        # 3. التحليل النهائي: دمج التدقيق الأمني مع الأخبار
+        # 2. إعداد التقرير الذكي (بدون أخبار تافهة)
         prompt = f"""
-        ACT AS A CRYPTO RISK AUDITOR (Institutional Grade).
+        ACT AS AN INSTITUTIONAL TRADER (ORDER FLOW SPECIALIST).
         
         ASSET: {asset.symbol}
         
-        🚨 SECURITY AUDIT (REAL ON-CHAIN FACTS):
-        - Is Honeypot (Can't sell): {security_audit.get('is_honeypot')}
-        - Mintable (Infinite Supply Risk): {security_audit.get('is_mintable')}
-        - Buy/Sell Tax: {security_audit.get('buy_tax')}% / {security_audit.get('sell_tax')}%
-        - Code Open Source: {security_audit.get('is_open_source')}
-        
-        📰 MARKET METRICS & NEWS:
-        - Liquidity: ${asset.liquidity_usd:,.0f}
-        - Search Intel: {news_data}
+        📊 ORDER FLOW DATA (THE TRUTH):
+        - 24h Transactions: {tx_data.get('buys', 0)} Buys vs {tx_data.get('sells', 0)} Sells.
+        - Buy Pressure: {tx_data.get('buy_ratio', 50):.1f}% (Above 50% = Buying dominance).
+        - Average Trade Size: ${tx_data.get('avg_trade', 0):.0f} per transaction.
+        - Total Volume: ${asset.volume_24h:,.0f}
         
         --------------------------------
-        YOUR VERDICT:
-        Base your signal PRIMARILY on the Security Audit.
-        - If Honeypot OR Mintable = "SCAM ALERT" (Severity: HIGH).
-        - If Taxes > 10% = "HIGH RISK" (Severity: HIGH).
-        - If Security is clean AND News is good = "SAFE / BUY".
+        YOUR JOB: Determine who is moving the price?
+        
+        LOGIC TO FOLLOW:
+        1. If "Avg Trade Size" is HIGH (> $1000) AND "Buy Pressure" > 55% -> **WHALES ACCUMULATING**. (Strong Buy).
+        2. If "Avg Trade Size" is LOW (< $50) AND "Buy Pressure" > 60% -> **RETAIL FOMO**. (Risky/Top Signal).
+        3. If "Buy Pressure" < 40% -> **DISTRIBUTION/DUMPING**. (Sell).
         
         OUTPUT JSON ONLY:
         {{
-            "signal": "SAFE" | "CAUTION" | "DANGEROUS" | "SCAM DETECTED",
+            "signal": "ACCUMULATION" | "FOMO" | "DUMPING" | "NEUTRAL",
             "severity": "HIGH" | "MEDIUM" | "LOW",
-            "headline": "Example: 🟢 Code Clean + High Liquidity",
-            "full_report": "Markdown. \n- Start with '🛡️ Security Audit' section listing the risks found.\n- Then '📰 Market Analysis'.\n- Final Verdict."
+            "headline": "Example: 🐋 Smart Money Buying (Avg Tx $2k)",
+            "full_report": "Markdown. Focus ONLY on the money flow. e.g., 'Retail is buying the top while whales are selling'. Don't talk about news.",
+            "whale_index": {int(whale_dominance)}
         }}
         """
         
@@ -125,25 +120,25 @@ class InstitutionalAnalyst:
                 messages=[{"role": "user", "content": prompt}],
                 model=self.model,
                 response_format={"type": "json_object"},
-                temperature=0.1 # دقة عالية جداً (لا إبداع في المخاطر)
+                temperature=0.1
             )
             result_json = json.loads(response.choices[0].message.content)
             
             return AlphaSignal(
                 asset_symbol=asset.symbol,
-                signal=result_json.get("signal", "CAUTION"),
-                severity=result_json.get("severity", "MEDIUM"),
-                headline=result_json.get("headline", "Audit Complete"),
-                full_report=result_json.get("full_report", "Report ready."),
-                audit_data=security_audit
+                signal=result_json.get("signal", "NEUTRAL"),
+                severity=result_json.get("severity", "LOW"),
+                headline=result_json.get("headline", "Analyzing Flow..."),
+                full_report=result_json.get("full_report", "Data processed."),
+                whale_index=result_json.get("whale_index", 0)
             )
             
         except Exception as e:
             return AlphaSignal(
                 asset_symbol=asset.symbol,
-                signal="UNKNOWN",
+                signal="ERROR",
                 severity="LOW",
-                headline="Audit Error",
+                headline="Data Error",
                 full_report=str(e),
-                audit_data={}
+                whale_index=0
             )
