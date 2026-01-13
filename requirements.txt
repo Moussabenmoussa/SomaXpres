@@ -1,4 +1,7 @@
-flask
-requests
-gunicorn
+fastapi
+uvicorn
 groq
+aiohttp
+motor
+python-dotenv
+pydantic
