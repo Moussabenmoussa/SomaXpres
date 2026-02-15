@@ -5,6 +5,7 @@ import requests
 import threading
 import time
 import json
+import security
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -161,7 +162,9 @@ class ChatRequest(BaseModel): message: str
 class SmartRequest(BaseModel): type: str; text: str
 class CodeAddRequest(BaseModel): password: str; type: str; codes: List[str]
 class OrderRequest(BaseModel): email: str; transaction_id: str; plan: str
-class TrialRequest(BaseModel): email: str
+class TrialRequest(BaseModel):
+    email: str
+    fingerprint: Optional[str] = None
 class MarketingRequest(BaseModel): password: str; subject: str; content: str; limit: int
 class PromptUpdateRequest(BaseModel): password: str; new_prompt: str
 
@@ -195,26 +198,19 @@ def smart_ask(req: SmartRequest):
 # --- SECURITY UPDATE: STRICT TRIAL ---
 @app.post("/get-trial")
 def get_trial(req: TrialRequest, request: Request):
-    # 1. Get Real IP
+    # 1. استخراج IP الحقيقي
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host
+    client_ip = forwarded.split(",")[0].strip() if forwarded else request.client.host
     
-    # 2. Check Database (Email OR IP)
-    if trials_col.find_one({"email": req.email}):
-        raise HTTPException(status_code=400, detail="Trial already claimed for this email.")
+    # 2. استدعاء ملف الحماية للفحص (سيوقف العملية إذا كان هناك تلاعب)
+    security.verify_trial_eligibility(req.email, client_ip, req.fingerprint, trials_col)
 
-    if trials_col.find_one({"ip": client_ip}):
-        raise HTTPException(status_code=400, detail="Trial limit reached for this device.")
-
-    # 3. Get Code
+    # 3. جلب الكود
     code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
     if not code_doc:
         raise HTTPException(status_code=404, detail="No trial codes available.")
 
-    # 4. Mark Sold & Save User
+    # 4. التحديث والتخزين
     codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
     
     users_col.update_one(
@@ -223,18 +219,27 @@ def get_trial(req: TrialRequest, request: Request):
         upsert=True
     )
     
-    # Log this trial to prevent abuse
+    # تسجيل البيانات لمنع التكرار
     trials_col.insert_one({
         "email": req.email, 
         "ip": client_ip, 
+        "fingerprint": req.fingerprint,
         "timestamp": datetime.datetime.now().isoformat()
     })
 
-    # 5. Send Email
+    # 5. إرسال الإيميل
     email_html = get_email_template("trial", {"code": code_doc["code"]})
     threading.Thread(target=send_email_brevo, args=(req.email, "Your Free Trial Code - DARPRO4K", email_html)).start()
 
     return {"message": "Code sent to email"}
+
+
+
+
+
+
+
+
 
 @app.post("/submit-order")
 def submit_order(order: OrderRequest):
@@ -329,6 +334,16 @@ def update_prompt(req: PromptUpdateRequest):
     if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
     config_col.update_one({"key": "system_prompt"}, {"$set": {"value": req.new_prompt}}, upsert=True)
     return {"message": "Updated"}
+
+@app.get("/security.js")
+def serve_security_js():
+    return security.get_fingerprint_script()
+
+
+
+
+
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)
