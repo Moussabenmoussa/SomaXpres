@@ -5,8 +5,7 @@ import requests
 import threading
 import time
 import json
-from functools
-import lru_cache
+from functools import lru_cache
 import security
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
