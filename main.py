@@ -16,8 +16,8 @@ from typing import Optional, List
 # --- CONFIGURATION ---
 # Render Environment Variables
 ADMIN_PASSWORD = os.environ.get("SECRET_KEY", "admin123") 
-TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_CHAT_ID = os.environ.get("CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
 MONGO_URI = os.environ.get("MONGO_URI")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
@@ -173,11 +173,7 @@ def set_webhook_bg():
     time.sleep(5)
     if RENDER_EXTERNAL_URL:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={RENDER_EXTERNAL_URL}/webhook"
-        try:
-            requests.get(url)
-            print(f"Webhook set to {RENDER_EXTERNAL_URL}")
-        except:
-            print("Webhook set failed")
+        requests.get(url)
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -195,7 +191,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- DATA MODELS (HERE IS THE FIX) ---
+# --- DATA MODELS ---
 class ChatRequest(BaseModel):
     message: str
 
@@ -217,7 +213,6 @@ class MarketingRequest(BaseModel):
     content: str
     limit: int
 
-# THIS WAS MISSING BEFORE:
 class PromptUpdateRequest(BaseModel):
     password: str
     new_prompt: str
@@ -258,19 +253,14 @@ def smart_ask(req: SmartRequest):
 def get_trial(req: TrialRequest):
     client_ip = "0.0.0.0" 
     
-    # Check Previous Trials
     existing = trials_col.find_one({"email": req.email})
     if existing:
-        last = datetime.datetime.fromisoformat(existing.get("timestamp", datetime.datetime.now().isoformat()))
-        # Strict 24h check can be re-enabled here
         pass
 
-    # Get Code
     code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
     if not code_doc:
         raise HTTPException(404, "No trial codes available.")
 
-    # Mark Sold & Save User
     codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
     
     users_col.update_one(
@@ -281,7 +271,6 @@ def get_trial(req: TrialRequest):
     
     trials_col.insert_one({"email": req.email, "ip": client_ip, "timestamp": datetime.datetime.now().isoformat()})
 
-    # Send Email
     email_html = get_email_template("trial", {"code": code_doc["code"]})
     threading.Thread(target=send_email_brevo, args=(req.email, "Your Free Trial Code - DARPRO4K", email_html)).start()
 
@@ -324,7 +313,6 @@ async def telegram_webhook(request: Request):
         chat_id = cb["message"]["chat"]["id"]
         msg_id = cb["message"]["message_id"]
         
-        # Stop spinner
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb["id"]})
 
         try: action, order_id = action_data.split(":")
@@ -344,7 +332,6 @@ async def telegram_webhook(request: Request):
                 codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
                 orders_col.update_one({"order_id": order_id}, {"$set": {"status": "approved", "assigned_code": code_val}})
                 
-                # SEND EMAIL
                 email_html = get_email_template("order", {"plan": order['plan'], "code": code_val})
                 threading.Thread(target=send_email_brevo, args=(order['email'], "Activation Successful - DARPRO4K", email_html)).start()
                 
@@ -356,29 +343,66 @@ async def telegram_webhook(request: Request):
             orders_col.update_one({"order_id": order_id}, {"$set": {"status": "rejected"}})
             new_text = f"❌ *REJECTED*\nOrder: {order_id}"
 
-        # Update Telegram
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText", 
                       json={"chat_id": chat_id, "message_id": msg_id, "text": new_text, "parse_mode": "Markdown"})
 
     return {"status": "ok"}
 
-# --- MARKETING ENDPOINT ---
+# --- MARKETING ENDPOINT (FIXED: Background Task) ---
+def process_broadcast_queue(subject, content, limit, db_uri, brevo_key, sender):
+    """Worker function to send emails in background"""
+    try:
+        # Re-connect in thread
+        client = MongoClient(db_uri)
+        db = client["iptv_store"]
+        users_col = db["users"]
+        
+        # Select users who haven't received ads recently
+        users = list(users_col.find({}).sort("last_marketing_date", 1).limit(limit))
+        
+        email_html = get_email_template("marketing", {"content": content})
+        
+        sent_count = 0
+        for user in users:
+            if "email" in user:
+                # Send logic logic here directly to avoid circular dependency
+                url = "https://api.brevo.com/v3/smtp/email"
+                payload = {
+                    "sender": {"name": "DARPRO4K Team", "email": sender},
+                    "to": [{"email": user["email"]}],
+                    "subject": subject,
+                    "htmlContent": email_html
+                }
+                headers = {"accept": "application/json", "api-key": brevo_key, "content-type": "application/json"}
+                
+                try:
+                    res = requests.post(url, json=payload, headers=headers)
+                    if res.status_code in [200, 201]:
+                        users_col.update_one({"_id": user["_id"]}, {"$set": {"last_marketing_date": datetime.datetime.now()}})
+                        sent_count += 1
+                        time.sleep(0.2) # Rate limit safe
+                except:
+                    pass
+        print(f"Broadcast finished: {sent_count} emails sent.")
+    except Exception as e:
+        print(f"Broadcast Error: {e}")
+
 @app.post("/admin/broadcast")
-def broadcast_email(req: MarketingRequest):
+def broadcast_email(req: MarketingRequest, background_tasks: BackgroundTasks):
     if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Invalid Password")
     
-    users = list(users_col.find({}).sort("last_marketing_date", 1).limit(req.limit))
-    count = 0
-    email_html = get_email_template("marketing", {"content": req.content})
-    
-    for user in users:
-        if "email" in user:
-            if send_email_brevo(user["email"], req.subject, email_html):
-                users_col.update_one({"_id": user["_id"]}, {"$set": {"last_marketing_date": datetime.datetime.now()}})
-                count += 1
-                time.sleep(0.2)
+    # Send immediately to UI, process in background
+    background_tasks.add_task(
+        process_broadcast_queue, 
+        req.subject, 
+        req.content, 
+        req.limit, 
+        MONGO_URI, 
+        BREVO_API_KEY, 
+        SENDER_EMAIL
+    )
                 
-    return {"message": f"Broadcast sent to {count} users."}
+    return {"message": "Broadcast started in background. You can close this window."}
 
 # --- ADMIN STATS ---
 @app.get("/admin/stats")
@@ -409,4 +433,3 @@ def update_prompt(req: PromptUpdateRequest):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)
-
