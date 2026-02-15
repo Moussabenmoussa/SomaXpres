@@ -1,8 +1,8 @@
-fastapi 
+fastapi
 uvicorn
-groq 
+groq
 pydantic
-requests 
+requests
 pymongo
 dnspython
 python-multipart
