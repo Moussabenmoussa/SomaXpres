@@ -14,10 +14,9 @@ from pymongo import MongoClient
 from typing import Optional, List
 
 # --- CONFIGURATION ---
-# Render Environment Variables
 ADMIN_PASSWORD = os.environ.get("SECRET_KEY", "admin123") 
-TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_CHAT_ID = os.environ.get("CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
 MONGO_URI = os.environ.get("MONGO_URI")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
@@ -30,111 +29,56 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 try:
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client["iptv_store"]
-    
-    # Collections
     codes_col = db["codes"]
     trials_col = db["trials"]
     orders_col = db["orders"]
     users_col = db["users"] 
     config_col = db["config"]
     
-    # Ensure System Prompt Exists
     if not config_col.find_one({"key": "system_prompt"}):
-        default_prompt = """You are 'Sami', the official support agent for DARPRO4K IPTV.
-Tone: Professional, helpful, and concise.
-Language Rule: Match the user's language (Arabic/English/French).
-Goal: Help with subscription plans and technical queries.
---- PRICING ---
-Trial: Free (24h)
-1 Month: $7
-3 Months: $17
-6 Months: $21
-1 Year: $35 (Best Value)
---- RULES ---
-1. Payment: PayPal to 'ninomino7001@gmail.com'.
-2. Activation: User must submit email & Transaction ID.
-3. Issues: If code not received or complex issue, direct to Management WhatsApp: https://wa.link/ysruwg"""
+        default_prompt = "You are Sami, support agent."
         config_col.insert_one({"key": "system_prompt", "value": default_prompt})
         
     print("✅ Database Connected.")
 except Exception as e:
     print(f"❌ DB Error: {e}")
 
-# --- PROFESSIONAL EMAIL TEMPLATES ---
+# --- EMAIL TEMPLATES ---
 def get_email_template(type, data):
-    
-    header = """
-    <div style="background-color:#0f172a; padding:20px; text-align:center;">
-        <h1 style="color:#3b82f6; font-family:Arial, sans-serif; margin:0;">DARPRO4K <span style="color:#ffffff;">IPTV</span></h1>
-    </div>
-    """
-    
-    footer = """
-    <div style="background-color:#f1f5f9; padding:20px; text-align:center; font-size:12px; color:#64748b; font-family:Arial;">
-        <p>Need help? Contact us on WhatsApp <a href="https://wa.link/ysruwg">Here</a></p>
-        <p>&copy; 2025 DARPRO4K. All rights reserved.</p>
-    </div>
-    """
-
-    body = ""
+    header = """<div style="background-color:#0f172a; padding:20px; text-align:center;"><h1 style="color:#3b82f6; font-family:Arial; margin:0;">DARPRO4K</h1></div>"""
+    footer = """<div style="background-color:#f1f5f9; padding:20px; text-align:center; font-size:12px; color:#64748b; font-family:Arial;"><p>Contact Support on WhatsApp</p></div>"""
     
     if type == 'trial':
         body = f"""
-        <div style="padding:30px; background-color:#ffffff; font-family:Arial, sans-serif; color:#334155;">
-            <h2 style="color:#0f172a;">Your 24H Free Trial is Ready! 🚀</h2>
-            <p>Thank you for trying DARPRO4K. Below is your activation code.</p>
-            
+        <div style="padding:30px; background-color:#ffffff; font-family:Arial; color:#334155;">
+            <h2 style="color:#0f172a;">Your 24H Trial Code</h2>
             <div style="background-color:#eff6ff; border:1px solid #bfdbfe; padding:20px; text-align:center; margin:20px 0; border-radius:8px;">
-                <span style="font-size:14px; color:#64748b; display:block; margin-bottom:5px;">ACTIVATION CODE</span>
                 <span style="font-size:24px; font-weight:bold; color:#2563eb; font-family:monospace; letter-spacing:2px;">{data['code']}</span>
             </div>
-
-            <h3>How to Start Watching:</h3>
-            <ol style="line-height:1.6;">
-                <li>Download our App: <a href="https://play.google.com/store/apps/details?id=com.mbm_soft.darplayer" style="color:#2563eb; font-weight:bold;">Click Here</a></li>
-                <li>Open the App.</li>
-                <li>Enter the code above.</li>
-            </ol>
+            <p>Download App: <a href="https://play.google.com/store/apps/details?id=com.mbm_soft.darplayer">Click Here</a></p>
         </div>
         """
-        
     elif type == 'order':
         body = f"""
-        <div style="padding:30px; background-color:#ffffff; font-family:Arial, sans-serif; color:#334155;">
-            <h2 style="color:#16a34a;">Payment Confirmed! ✅</h2>
-            <p>Welcome to the family! Your subscription for <strong>{data['plan']}</strong> is now active.</p>
-            
+        <div style="padding:30px; background-color:#ffffff; font-family:Arial; color:#334155;">
+            <h2 style="color:#16a34a;">Subscription Active!</h2>
+            <p>Plan: {data['plan']}</p>
             <div style="background-color:#f0fdf4; border:1px solid #bbf7d0; padding:20px; text-align:center; margin:20px 0; border-radius:8px;">
-                <span style="font-size:14px; color:#64748b; display:block; margin-bottom:5px;">YOUR PREMIUM CODE</span>
                 <span style="font-size:28px; font-weight:bold; color:#16a34a; font-family:monospace; letter-spacing:2px;">{data['code']}</span>
             </div>
-
-            <h3>Installation Guide:</h3>
-            <ol style="line-height:1.6;">
-                <li>Download <strong>DAR Player</strong> from Google Play: <a href="https://play.google.com/store/apps/details?id=com.mbm_soft.darplayer">Download Link</a></li>
-                <li>Launch the app.</li>
-                <li>Paste your Premium Code.</li>
-                <li>Enjoy 4K Streaming!</li>
-            </ol>
+            <p>Download App: <a href="https://play.google.com/store/apps/details?id=com.mbm_soft.darplayer">Click Here</a></p>
         </div>
         """
-        
     elif type == 'marketing':
-        body = f"""
-        <div style="padding:30px; background-color:#ffffff; font-family:Arial, sans-serif; color:#334155;">
-            {data['content']}
-            <br><br>
-            <a href="{API_PUBLIC_URL if API_PUBLIC_URL else '#'}" style="display:inline-block; background-color:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">Visit Website</a>
-        </div>
-        """
-
+        body = f"""<div style="padding:30px; background-color:#ffffff; font-family:Arial;">{data['content']}</div>"""
+    
     return f"{header}{body}{footer}"
 
-# --- BREVO EMAIL SENDER ---
+# --- BREVO SENDER (DEBUG MODE) ---
 def send_email_brevo(to_email, subject, html_content):
     if not BREVO_API_KEY:
-        print("Brevo API Key missing")
-        return False
+        print("❌ Brevo Key Missing!")
+        return False, "Server Config Error: Missing Email Key"
         
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
@@ -152,16 +96,16 @@ def send_email_brevo(to_email, subject, html_content):
     try:
         response = requests.post(url, json=payload, headers=headers)
         if response.status_code in [200, 201]:
-            print(f"Email sent to {to_email}")
-            return True
+            print(f"✅ Email sent to {to_email}")
+            return True, "Sent"
         else:
-            print(f"Brevo Error: {response.text}")
-            return False
+            print(f"❌ Brevo Error: {response.text}")
+            return False, f"Email Error: {response.text}"
     except Exception as e:
-        print(f"Email Exception: {e}")
-        return False
+        print(f"❌ Email Exception: {e}")
+        return False, str(e)
 
-# --- TELEGRAM UTILS ---
+# --- TELEGRAM ---
 def send_telegram_msg(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "Markdown"}
@@ -172,14 +116,8 @@ def send_telegram_msg(text, reply_markup=None):
 def set_webhook_bg():
     time.sleep(5)
     if RENDER_EXTERNAL_URL:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={RENDER_EXTERNAL_URL}/webhook"
-        try:
-            requests.get(url)
-            print(f"Webhook set to {RENDER_EXTERNAL_URL}")
-        except:
-            print("Webhook set failed")
+        requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={RENDER_EXTERNAL_URL}/webhook")
 
-# --- LIFESPAN ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     threading.Thread(target=set_webhook_bg, daemon=True).start()
@@ -195,82 +133,77 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- DATA MODELS (HERE IS THE FIX) ---
+# --- MODELS ---
 class ChatRequest(BaseModel):
     message: str
-
 class SmartRequest(BaseModel):
     type: str; text: str
-
 class CodeAddRequest(BaseModel):
     password: str; type: str; codes: List[str]
-
 class OrderRequest(BaseModel):
     email: str; transaction_id: str; plan: str
-
 class TrialRequest(BaseModel):
     email: str
-
 class MarketingRequest(BaseModel):
-    password: str
-    subject: str
-    content: str
-    limit: int
-
-# THIS WAS MISSING BEFORE:
+    password: str; subject: str; content: str; limit: int
 class PromptUpdateRequest(BaseModel):
-    password: str
-    new_prompt: str
+    password: str; new_prompt: str
 
 # --- ENDPOINTS ---
 
 @app.get("/")
-def home(): return {"status": "Active", "service": "DARPRO4K System"}
-
+def home(): return {"status": "Active"}
 @app.get("/status")
 def status(): return {"status": "Online"}
 
-# 1. AI Chat
 @app.post("/chat")
 def chat_endpoint(req: ChatRequest):
     client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     if not client: return {"response": "AI Unavailable"}
     try:
-        config = config_col.find_one({"key": "system_prompt"})
-        prompt = config["value"] if config else "Helpful assistant."
+        prompt = config_col.find_one({"key": "system_prompt"})["value"]
         completion = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role":"system","content":prompt},{"role":"user","content":req.message}])
         return {"response": completion.choices[0].message.content}
     except: return {"response": "System busy."}
 
-# 2. Smart Assistant
 @app.post("/smart-ask")
 def smart_ask(req: SmartRequest):
     client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     if not client: return {"response": "Error"}
-    sys_prompt = "You are a sales & movie expert. Reply in user's language."
     try:
-        comp = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role":"system","content":sys_prompt},{"role":"user","content":req.text}])
+        comp = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role":"system","content":"Reply in user language"},{"role":"user","content":req.text}])
         return {"response": comp.choices[0].message.content}
     except: return {"response": "Error"}
 
-# 3. Get Trial
+# 3. GET TRIAL (STRICT DEBUG MODE)
 @app.post("/get-trial")
 def get_trial(req: TrialRequest):
     client_ip = "0.0.0.0" 
     
-    # Check Previous Trials
+    # 1. Check Previous Trials
     existing = trials_col.find_one({"email": req.email})
     if existing:
         last = datetime.datetime.fromisoformat(existing.get("timestamp", datetime.datetime.now().isoformat()))
-        # Strict 24h check can be re-enabled here
+        # Strict check disabled for testing, re-enable later if needed
         pass
 
-    # Get Code
+    # 2. Check Stock
     code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
     if not code_doc:
-        raise HTTPException(404, "No trial codes available.")
+        raise HTTPException(404, "Sorry, No trial codes available right now.")
 
-    # Mark Sold & Save User
+    # 3. Attempt to Send Email FIRST (Before burning the code)
+    email_html = get_email_template("trial", {"code": code_doc["code"]})
+    
+    # Using Synchronous call to catch errors
+    success, error_msg = send_email_brevo(req.email, "Your Free Trial Code - DARPRO4K", email_html)
+    
+    if not success:
+        # If email fails, DO NOT mark code as sold
+        print(f"Failed to send trial email to {req.email}: {error_msg}")
+        raise HTTPException(500, f"Failed to send email. Reason: {error_msg}")
+
+    # 4. If Email Sent -> Mark Sold & Save User
     codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
     
     users_col.update_one(
@@ -281,22 +214,16 @@ def get_trial(req: TrialRequest):
     
     trials_col.insert_one({"email": req.email, "ip": client_ip, "timestamp": datetime.datetime.now().isoformat()})
 
-    # Send Email
-    email_html = get_email_template("trial", {"code": code_doc["code"]})
-    threading.Thread(target=send_email_brevo, args=(req.email, "Your Free Trial Code - DARPRO4K", email_html)).start()
-
     return {"message": "Code sent to email"}
 
 # 4. Submit Order
 @app.post("/submit-order")
 def submit_order(order: OrderRequest):
     order_id = f"ORD-{datetime.datetime.now().strftime('%H%M%S')}"
-    
     orders_col.insert_one({
         "order_id": order_id, "email": order.email, "trans_id": order.transaction_id, 
         "plan": order.plan, "status": "pending", "created_at": datetime.datetime.now()
     })
-    
     users_col.update_one({"email": order.email}, {"$set": {"source": "order"}}, upsert=True)
 
     msg = f"🚨 *NEW ORDER*\nPlan: {order.plan}\nTxID: `{order.transaction_id}`\nEmail: {order.email}\nID: `{order_id}`"
@@ -305,14 +232,12 @@ def submit_order(order: OrderRequest):
     threading.Thread(target=send_telegram_msg, args=(msg, kb)).start()
     return {"status": "pending", "order_id": order_id}
 
-# 5. Check Order Status
 @app.get("/check-order")
 def check_order(order_id: str):
     order = orders_col.find_one({"order_id": order_id})
     if not order: return {"status": "not_found"}
     return {"status": order["status"]}
 
-# 6. Webhook
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try: data = await request.json()
@@ -320,15 +245,11 @@ async def telegram_webhook(request: Request):
     
     if "callback_query" in data:
         cb = data["callback_query"]
-        action_data = cb["data"]
+        action, order_id = cb["data"].split(":")
         chat_id = cb["message"]["chat"]["id"]
         msg_id = cb["message"]["message_id"]
         
-        # Stop spinner
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb["id"]})
-
-        try: action, order_id = action_data.split(":")
-        except: return {}
         
         order = orders_col.find_one({"order_id": order_id})
         if not order: return {}
@@ -344,49 +265,35 @@ async def telegram_webhook(request: Request):
                 codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
                 orders_col.update_one({"order_id": order_id}, {"$set": {"status": "approved", "assigned_code": code_val}})
                 
-                # SEND EMAIL
+                # Send Email
                 email_html = get_email_template("order", {"plan": order['plan'], "code": code_val})
                 threading.Thread(target=send_email_brevo, args=(order['email'], "Activation Successful - DARPRO4K", email_html)).start()
                 
                 new_text = f"✅ *APPROVED*\nUser: {order['email']}\nCode Emailed: `{code_val}`"
             else:
                 new_text = f"⚠️ *NO STOCK* for {db_type}. Order: {order_id}"
-                
         elif action == "rej":
             orders_col.update_one({"order_id": order_id}, {"$set": {"status": "rejected"}})
             new_text = f"❌ *REJECTED*\nOrder: {order_id}"
 
-        # Update Telegram
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText", 
                       json={"chat_id": chat_id, "message_id": msg_id, "text": new_text, "parse_mode": "Markdown"})
-
     return {"status": "ok"}
 
-# --- MARKETING ENDPOINT ---
 @app.post("/admin/broadcast")
 def broadcast_email(req: MarketingRequest):
-    if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Invalid Password")
-    
+    if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
     users = list(users_col.find({}).sort("last_marketing_date", 1).limit(req.limit))
     count = 0
     email_html = get_email_template("marketing", {"content": req.content})
-    
     for user in users:
         if "email" in user:
-            if send_email_brevo(user["email"], req.subject, email_html):
+            s, _ = send_email_brevo(user["email"], req.subject, email_html)
+            if s:
                 users_col.update_one({"_id": user["_id"]}, {"$set": {"last_marketing_date": datetime.datetime.now()}})
                 count += 1
                 time.sleep(0.2)
-                
-    return {"message": f"Broadcast sent to {count} users."}
-
-# --- ADMIN STATS ---
-@app.get("/admin/stats")
-def get_stats(password: str):
-    if password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
-    stock = list(codes_col.aggregate([{"$match": {"is_sold": False}}, {"$group": {"_id": "$type", "count": {"$sum": 1}}}]))
-    users_count = users_col.count_documents({})
-    return {"stock": {r["_id"]: r["count"] for r in stock}, "total_users": users_count}
+    return {"message": f"Sent to {count} users."}
 
 @app.post("/admin/add-codes")
 def add_codes(req: CodeAddRequest):
@@ -394,6 +301,12 @@ def add_codes(req: CodeAddRequest):
     docs = [{"type": req.type, "code": c.strip(), "is_sold": False} for c in req.codes if c.strip()]
     if docs: codes_col.insert_many(docs)
     return {"message": f"Added {len(docs)} codes."}
+
+@app.get("/admin/stats")
+def get_stats(password: str):
+    if password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
+    stock = list(codes_col.aggregate([{"$match": {"is_sold": False}}, {"$group": {"_id": "$type", "count": {"$sum": 1}}}]))
+    return {"stock": {r["_id"]: r["count"] for r in stock}, "total_users": users_col.count_documents({})}
 
 @app.get("/admin/get-prompt")
 def get_prompt(password: str):
