@@ -1,1 +1,8 @@
-fastapiuvicorngroqpydanticrequestspymongodnspythonpython-multipart
+fastapi 
+uvicorn
+groq 
+pydantic
+requests 
+pymongo
+dnspython
+python-multipart
