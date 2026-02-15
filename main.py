@@ -37,6 +37,10 @@ try:
     users_col = db["users"] 
     config_col = db["config"]
     
+    # === أضف هذا السطر هنا ===
+    # إنشاء فهرس للحذف التلقائي بعد 30 يوماً (2592000 ثانية)
+    trials_col.create_index("created_at", expireAfterSeconds=2592000)
+  
     if not config_col.find_one({"key": "system_prompt"}):
         default_prompt = """You are 'Sami', the official support agent for DARPRO4K IPTV.
 Tone: Professional, helpful, and concise.
@@ -220,11 +224,13 @@ def get_trial(req: TrialRequest, request: Request):
     )
     
     # تسجيل البيانات لمنع التكرار
+    # Log everything with TTL Date
     trials_col.insert_one({
         "email": req.email, 
         "ip": client_ip, 
         "fingerprint": req.fingerprint,
-        "timestamp": datetime.datetime.now().isoformat()
+        "timestamp": datetime.datetime.now().isoformat(),
+        "created_at": datetime.datetime.utcnow()  # <-- هذا الحقل ضروري للتنظيف الذاتي
     })
 
     # 5. إرسال الإيميل
