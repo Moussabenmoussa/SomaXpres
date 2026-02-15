@@ -16,12 +16,12 @@ from typing import Optional, List
 # --- CONFIGURATION ---
 # Render Environment Variables
 ADMIN_PASSWORD = os.environ.get("SECRET_KEY", "admin123") 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_CHAT_ID = os.environ.get("CHAT_ID")
 MONGO_URI = os.environ.get("MONGO_URI")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") # Must be verified in Brevo
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL") 
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -35,7 +35,7 @@ try:
     codes_col = db["codes"]
     trials_col = db["trials"]
     orders_col = db["orders"]
-    users_col = db["users"] # New: For Marketing & CRM
+    users_col = db["users"] 
     config_col = db["config"]
     
     # Ensure System Prompt Exists
@@ -62,20 +62,13 @@ except Exception as e:
 
 # --- PROFESSIONAL EMAIL TEMPLATES ---
 def get_email_template(type, data):
-    """
-    Returns a professional HTML email body.
-    type: 'trial', 'order', 'marketing'
-    data: dict containing code, plan, etc.
-    """
     
-    # Common Header
     header = """
     <div style="background-color:#0f172a; padding:20px; text-align:center;">
         <h1 style="color:#3b82f6; font-family:Arial, sans-serif; margin:0;">DARPRO4K <span style="color:#ffffff;">IPTV</span></h1>
     </div>
     """
     
-    # Common Footer
     footer = """
     <div style="background-color:#f1f5f9; padding:20px; text-align:center; font-size:12px; color:#64748b; font-family:Arial;">
         <p>Need help? Contact us on WhatsApp <a href="https://wa.link/ysruwg">Here</a></p>
@@ -131,7 +124,7 @@ def get_email_template(type, data):
         <div style="padding:30px; background-color:#ffffff; font-family:Arial, sans-serif; color:#334155;">
             {data['content']}
             <br><br>
-            <a href="{API_PUBLIC_URL}" style="display:inline-block; background-color:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">Visit Website</a>
+            <a href="{API_PUBLIC_URL if API_PUBLIC_URL else '#'}" style="display:inline-block; background-color:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">Visit Website</a>
         </div>
         """
 
@@ -180,7 +173,11 @@ def set_webhook_bg():
     time.sleep(5)
     if RENDER_EXTERNAL_URL:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={RENDER_EXTERNAL_URL}/webhook"
-        requests.get(url)
+        try:
+            requests.get(url)
+            print(f"Webhook set to {RENDER_EXTERNAL_URL}")
+        except:
+            print("Webhook set failed")
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -198,7 +195,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- DATA MODELS ---
+# --- DATA MODELS (HERE IS THE FIX) ---
 class ChatRequest(BaseModel):
     message: str
 
@@ -217,8 +214,13 @@ class TrialRequest(BaseModel):
 class MarketingRequest(BaseModel):
     password: str
     subject: str
-    content: str # HTML supported
-    limit: int # 50, 100, etc.
+    content: str
+    limit: int
+
+# THIS WAS MISSING BEFORE:
+class PromptUpdateRequest(BaseModel):
+    password: str
+    new_prompt: str
 
 # --- ENDPOINTS ---
 
@@ -234,7 +236,8 @@ def chat_endpoint(req: ChatRequest):
     client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     if not client: return {"response": "AI Unavailable"}
     try:
-        prompt = config_col.find_one({"key": "system_prompt"})["value"]
+        config = config_col.find_one({"key": "system_prompt"})
+        prompt = config["value"] if config else "Helpful assistant."
         completion = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role":"system","content":prompt},{"role":"user","content":req.message}])
         return {"response": completion.choices[0].message.content}
     except: return {"response": "System busy."}
@@ -250,40 +253,35 @@ def smart_ask(req: SmartRequest):
         return {"response": comp.choices[0].message.content}
     except: return {"response": "Error"}
 
-# 3. Get Trial (Now requires Email + Sends Email)
+# 3. Get Trial
 @app.post("/get-trial")
 def get_trial(req: TrialRequest):
-    client_ip = "0.0.0.0" # Render handling ip logic separately or trust x-forwarded
+    client_ip = "0.0.0.0" 
     
-    # 1. Check Previous Trials (Email or IP)
-    existing = trials_col.find_one({"$or": [{"email": req.email}, {"ip": client_ip}]})
+    # Check Previous Trials
+    existing = trials_col.find_one({"email": req.email})
     if existing:
-        # Check date difference
         last = datetime.datetime.fromisoformat(existing.get("timestamp", datetime.datetime.now().isoformat()))
-        if (datetime.datetime.now() - last).days < 1:
-             # Just for logic, in real strict mode update this
-             pass 
-             # raise HTTPException(400, "Trial limit: 1 per 24h.") 
+        # Strict 24h check can be re-enabled here
+        pass
 
-    # 2. Get Code
+    # Get Code
     code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
     if not code_doc:
         raise HTTPException(404, "No trial codes available.")
 
-    # 3. Mark Sold & Save User
+    # Mark Sold & Save User
     codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
     
-    # Update/Insert User for Marketing
     users_col.update_one(
         {"email": req.email}, 
         {"$set": {"source": "trial", "joined_at": datetime.datetime.now()}}, 
         upsert=True
     )
     
-    # Update Trial Log
     trials_col.insert_one({"email": req.email, "ip": client_ip, "timestamp": datetime.datetime.now().isoformat()})
 
-    # 4. Send Email (Background Task ideally, but sync for simplicity here)
+    # Send Email
     email_html = get_email_template("trial", {"code": code_doc["code"]})
     threading.Thread(target=send_email_brevo, args=(req.email, "Your Free Trial Code - DARPRO4K", email_html)).start()
 
@@ -299,7 +297,6 @@ def submit_order(order: OrderRequest):
         "plan": order.plan, "status": "pending", "created_at": datetime.datetime.now()
     })
     
-    # Save User for Marketing
     users_col.update_one({"email": order.email}, {"$set": {"source": "order"}}, upsert=True)
 
     msg = f"🚨 *NEW ORDER*\nPlan: {order.plan}\nTxID: `{order.transaction_id}`\nEmail: {order.email}\nID: `{order_id}`"
@@ -313,9 +310,9 @@ def submit_order(order: OrderRequest):
 def check_order(order_id: str):
     order = orders_col.find_one({"order_id": order_id})
     if not order: return {"status": "not_found"}
-    return {"status": order["status"]} # No code returned here, code is emailed
+    return {"status": order["status"]}
 
-# 6. Telegram Webhook (The Logic Center)
+# 6. Webhook
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try: data = await request.json()
@@ -336,7 +333,6 @@ async def telegram_webhook(request: Request):
         order = orders_col.find_one({"order_id": order_id})
         if not order: return {}
 
-        # Plan mapping
         plan_map = {"1 Month":"1m", "3 Months":"3m", "6 Months":"6m", "12 Months":"12m", "Yearly":"12m"}
         db_type = plan_map.get(order.get("plan"), "1m")
 
@@ -345,7 +341,6 @@ async def telegram_webhook(request: Request):
             code_doc = codes_col.find_one({"type": db_type, "is_sold": False})
             if code_doc:
                 code_val = code_doc["code"]
-                # Update DB
                 codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
                 orders_col.update_one({"order_id": order_id}, {"$set": {"status": "approved", "assigned_code": code_val}})
                 
@@ -372,23 +367,16 @@ async def telegram_webhook(request: Request):
 def broadcast_email(req: MarketingRequest):
     if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Invalid Password")
     
-    # 1. Find eligible users (Marketing logic: limit count, oldest first)
-    # Ensure we don't spam: sort by last_marketing_date ascending (nulls first)
-    query = {} # Can add filters here later
-    users = list(users_col.find(query).sort("last_marketing_date", 1).limit(req.limit))
-    
+    users = list(users_col.find({}).sort("last_marketing_date", 1).limit(req.limit))
     count = 0
     email_html = get_email_template("marketing", {"content": req.content})
     
     for user in users:
         if "email" in user:
-            # Send Email
-            success = send_email_brevo(user["email"], req.subject, email_html)
-            if success:
-                # Update last sent date so they go to back of queue
+            if send_email_brevo(user["email"], req.subject, email_html):
                 users_col.update_one({"_id": user["_id"]}, {"$set": {"last_marketing_date": datetime.datetime.now()}})
                 count += 1
-                time.sleep(0.2) # Rate limit protection for Brevo Free tier
+                time.sleep(0.2)
                 
     return {"message": f"Broadcast sent to {count} users."}
 
@@ -396,14 +384,9 @@ def broadcast_email(req: MarketingRequest):
 @app.get("/admin/stats")
 def get_stats(password: str):
     if password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
-    
     stock = list(codes_col.aggregate([{"$match": {"is_sold": False}}, {"$group": {"_id": "$type", "count": {"$sum": 1}}}]))
     users_count = users_col.count_documents({})
-    
-    return {
-        "stock": {r["_id"]: r["count"] for r in stock},
-        "total_users": users_count
-    }
+    return {"stock": {r["_id"]: r["count"] for r in stock}, "total_users": users_count}
 
 @app.post("/admin/add-codes")
 def add_codes(req: CodeAddRequest):
