@@ -1,251 +1,354 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse
+import os
+import datetime
+import uvicorn
+import requests
+import threading
+import time
 from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import asyncio
-from scout import MarketRadar
-from analyst import InstitutionalAnalyst
-from vault import AlphaVault
+from groq import Groq
+from pymongo import MongoClient
+from typing import Optional, List
 
-# إعدادات
-WATCHLIST_SECTORS = ["Solana", "AI", "Meme"]
-vault = AlphaVault()
+# --- CONFIGURATION (Loaded from Render Env) ---
+# يتم سحب هذه القيم من إعدادات Render التي أرسلتها في الصورة
+ADMIN_PASSWORD = os.environ.get("SECRET_KEY", "admin123") 
+TELEGRAM_BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_CHAT_ID = os.environ.get("CHAT_ID")
+MONGO_URI = os.environ.get("MONGO_URI")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
-# المهام الخلفية
-async def run_market_cycle():
-    radar = MarketRadar()
-    assets = await radar.scan_market(WATCHLIST_SECTORS)
-    top_assets = assets[:3] # نقلل العدد للسرعة
+# Render URL - يفضل إضافته في Environment Variables باسم RENDER_EXTERNAL_URL
+# مثال: https://your-app-name.onrender.com
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL") 
+
+# --- MONGODB SETUP ---
+try:
+    # الاتصال بقاعدة البيانات السحابية
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client["iptv_store"] # اسم قاعدة البيانات
     
-    analyst = InstitutionalAnalyst()
-    for asset in top_assets:
-        try:
-            signal = await analyst.analyze_asset(asset)
-            await vault.save_intel(asset, signal)
-        except:
-            pass
+    # تعريف الجداول (Collections)
+    codes_col = db["codes"]
+    trials_col = db["trials"]
+    orders_col = db["orders"]
+    config_col = db["config"]
+    
+    # إضافة الدستور الافتراضي إذا لم يكن موجوداً
+    if not config_col.find_one({"key": "system_prompt"}):
+        default_prompt = """You are 'Sami', a senior support specialist for StreamKey.
+Tone: Professional, warm, and concise. 
+Language Rule: ALWAYS respond in the SAME LANGUAGE the user uses.
+Goal: Assist with subscriptions and activation.
+--- PRICING ---
+Trial: Free (24h)
+1 Month: $7
+3 Months: $17
+6 Months: $21
+1 Year: $35 (Best Value)
+--- RULES ---
+1. Payment via PayPal: 'ninomino7001@gmail.com'.
+2. Activation: Send Transaction ID via the website form."""
+        config_col.insert_one({"key": "system_prompt", "value": default_prompt})
+        
+    print("✅ Connected to MongoDB Atlas successfully.")
+except Exception as e:
+    print(f"❌ MongoDB Connection Error: {e}")
+
+# --- TELEGRAM UTILS ---
+def send_telegram_msg(text, reply_markup=None):
+    if not TELEGRAM_BOT_TOKEN or not ADMIN_CHAT_ID:
+        print("Telegram tokens missing.")
+        return
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        # Render has stable internet, standard requests work fine
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Telegram Error: {e}")
+
+def set_webhook_background():
+    """Sets webhook automatically after server boot"""
+    if not RENDER_EXTERNAL_URL:
+        print("⚠️ Warning: RENDER_EXTERNAL_URL not set in env vars. Webhook might not work.")
+        return
+        
+    time.sleep(5) # Wait for server to be fully ready
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}"
+    try:
+        res = requests.get(url, timeout=10)
+        print(f"Webhook Setup: {res.text}")
+    except Exception as e:
+        print(f"Webhook Setup Failed: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    asyncio.create_task(run_market_cycle())
+    # Startup: Start webhook setup in background
+    threading.Thread(target=set_webhook_background, daemon=True).start()
     yield
 
-app = FastAPI(title="Alpha Radar Mobile", lifespan=lifespan)
+# --- APP INIT ---
+app = FastAPI(lifespan=lifespan)
 
-class SearchRequest(BaseModel):
-    query: str
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-html_interface = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Alpha Radar</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        :root {
-            --bg-color: #0b0e11;
-            --card-bg: #151a21;
-            --text-primary: #e6e8eb;
-            --text-secondary: #9ca3af;
-            --accent: #3b82f6;
-            --border: #2d3748;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-        }
-        body { background: var(--bg-color); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding-bottom: 50px; }
-        
-        /* Navbar Mobile Friendly */
-        .navbar { 
-            background: var(--card-bg); padding: 15px; border-bottom: 1px solid var(--border); 
-            display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; z-index: 10; 
-        }
-        .logo { font-size: 18px; font-weight: 800; letter-spacing: 1px; width: 100%; text-align: center; }
-        .logo span { color: var(--accent); }
-        
-        .search-box { display: flex; gap: 5px; width: 100%; }
-        .search-input { 
-            width: 100%; background: #0b0e11; border: 1px solid var(--border); color: white; 
-            padding: 12px; border-radius: 6px; outline: none; font-size: 16px; 
-        }
-        .search-btn { 
-            background: var(--accent); color: white; border: none; padding: 0 20px; 
-            border-radius: 6px; font-weight: 600; white-space: nowrap; 
-        }
+# --- MODELS ---
+class ChatRequest(BaseModel):
+    message: str
 
-        /* Container & Mobile Table */
-        .container { padding: 15px; max-width: 100%; }
-        .section-title { font-size: 12px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px; font-weight: 700; }
+class SmartRequest(BaseModel):
+    type: str 
+    text: str
 
-        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .data-table { width: 100%; border-collapse: collapse; background: var(--card-bg); min-width: 600px; /* Forces scroll on small screens */ }
-        
-        th { text-align: left; padding: 12px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--border); background: #1a202c; }
-        td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
-        tr:hover { background: #1c222b; }
-        
-        .badge { padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; display: inline-block; }
-        .badge.HIGH { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-        .badge.MEDIUM { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
-        .badge.LOW { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-        
-        .bullish { color: var(--success); }
-        .bearish { color: var(--danger); }
+class CodeAddRequest(BaseModel):
+    password: str
+    type: str
+    codes: List[str]
 
-        /* Mobile Modal */
-        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; backdrop-filter: blur(3px); }
-        .modal-content { 
-            background: var(--card-bg); width: 90%; height: 90%; margin: 5% auto; padding: 20px; 
-            border-radius: 12px; border: 1px solid var(--border); overflow-y: auto; position: relative;
-        }
-        .close-btn { 
-            position: absolute; top: 10px; right: 15px; font-size: 28px; color: var(--text-secondary); 
-            background: none; border: none; cursor: pointer; z-index: 10;
-        }
-        .markdown-body { line-height: 1.6; color: #d1d5db; font-size: 14px; margin-top: 20px; }
-        .markdown-body h1, .markdown-body h2 { color: var(--accent); margin-top: 15px; font-size: 18px; }
-    </style>
-</head>
-<body>
+class OrderRequest(BaseModel):
+    email: str
+    transaction_id: str
+    plan: str
 
-    <nav class="navbar">
-        <div class="logo">ALPHA<span>RADAR</span></div>
-        <div class="search-box">
-            <input type="text" id="searchInput" class="search-input" placeholder="Search (e.g. SOL)...">
-            <button onclick="manualSearch()" id="searchBtn" class="search-btn">SCAN</button>
-        </div>
-    </nav>
+class PromptUpdateRequest(BaseModel):
+    password: str
+    new_prompt: str
 
-    <div class="container">
-        <div class="section-title">📡 Live Intelligence Feed</div>
-        
-        <div class="table-wrapper">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Asset</th>
-                        <th>Price</th>
-                        <th>Signal</th>
-                        <th>Risk</th>
-                        <th>Summary</th>
-                    </tr>
-                </thead>
-                <tbody id="table-body">
-                    <tr><td colspan="5" style="text-align:center; padding:20px; color:#6b7280;">Initializing System...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
+# --- ENDPOINTS ---
 
-    <!-- Modal -->
-    <div id="modal">
-        <div class="modal-content">
-            <button class="close-btn" onclick="closeModal()">&times;</button>
-            <div id="modal-body" class="markdown-body"></div>
-        </div>
-    </div>
+@app.get("/")
+def home():
+    return {"status": "Running", "service": "StreamKey on Render"}
 
-    <script>
-        async function manualSearch() {
-            const query = document.getElementById('searchInput').value;
-            if (!query) return;
-
-            const btn = document.getElementById('searchBtn');
-            const originalText = btn.innerText;
-            btn.innerText = "⌛";
-            btn.disabled = true;
-
-            try {
-                const res = await fetch('/api/manual-scan', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({query: query})
-                });
-                const data = await res.json();
-                
-                if (data.status === "success") {
-                    openModal(data.report.full_report);
-                    loadData(); 
-                } else {
-                    alert("Error: " + data.detail);
-                }
-            } catch (e) {
-                alert("Connection failed. Check internet.");
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-            }
-        }
-
-        async function loadData() {
-            try {
-                const res = await fetch('/api/feed');
-                const data = await res.json();
-                const tbody = document.getElementById('table-body');
-                
-                if (data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px;">Scanning market... wait a moment.</td></tr>';
-                    return;
-                }
-
-                tbody.innerHTML = '';
-                data.forEach(item => {
-                    const row = document.createElement('tr');
-                    let signalClass = item.signal.includes('BULL') ? 'bullish' : (item.signal.includes('BEAR') ? 'bearish' : '');
-                    
-                    row.innerHTML = `
-                        <td style="font-weight:bold; color:white;">${item.symbol}</td>
-                        <td>$${item.price.toLocaleString()}</td>
-                        <td class="${signalClass}">${item.signal}</td>
-                        <td><span class="badge ${item.severity}">${item.severity}</span></td>
-                        <td style="color:#d1d5db; min-width: 150px;">${item.headline}</td>
-                    `;
-                    row.onclick = () => openModal(item.full_report);
-                    tbody.appendChild(row);
-                });
-            } catch (e) { console.log("Feed error"); }
-        }
-
-        function openModal(report) {
-            document.getElementById('modal').style.display = 'block';
-            document.getElementById('modal-body').innerHTML = marked.parse(report);
-        }
-
-        function closeModal() {
-            document.getElementById('modal').style.display = 'none';
-        }
-
-        loadData();
-        setInterval(loadData, 20000); // تحديث كل 20 ثانية
-    </script>
-</body>
-</html>
-"""
-
-@app.get("/", response_class=HTMLResponse)
-def dashboard():
-    return html_interface
-
-@app.get("/api/feed")
-async def get_feed():
-    return await vault.get_latest_feed()
-
-@app.post("/api/manual-scan")
-async def manual_scan(request: SearchRequest):
+@app.get("/status")
+def status():
     try:
-        radar = MarketRadar()
-        assets = await radar.scan_market([request.query])
-        
-        if not assets:
-            raise HTTPException(status_code=404, detail="Not found")
-            
-        target_asset = assets[0]
-        analyst = InstitutionalAnalyst()
-        signal = await analyst.analyze_asset(target_asset)
-        await vault.save_intel(target_asset, signal)
-        
-        return {"status": "success", "report": signal}
+        # Check DB connection
+        db.command("ping")
+        return {"status": "Online", "database": "Connected"}
+    except:
+        return {"status": "Online", "database": "Disconnected"}
+
+# 1. AI Chat
+@app.post("/chat")
+def chat_endpoint(req: ChatRequest):
+    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+    if not client: return {"response": "AI Config Error (Check API Key)"}
+    
+    try:
+        cfg = config_col.find_one({"key": "system_prompt"})
+        prompt = cfg["value"] if cfg else "You are a helpful assistant."
+
+        completion = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": req.message}],
+            temperature=0.7, max_tokens=250
+        )
+        return {"response": completion.choices[0].message.content}
     except Exception as e:
-        return {"status": "error", "detail": str(e)}
+        print(f"Groq Error: {e}")
+        return {"response": "System is currently busy."}
+
+# 2. Smart Assistant
+@app.post("/smart-ask")
+def smart_ask_endpoint(req: SmartRequest):
+    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+    if not client: return {"response": "Unavailable"}
+
+    if req.type == 'content':
+        sys = "You are a movie guide. Suggest 3 items based on input. Same language as user."
+        usr = f"Suggest content for: {req.text}"
+    else:
+        sys = "You are a sales rep. Recommend 1 plan (Trial/1M/1Y) based on input. Same language as user."
+        usr = f"Recommend plan for: {req.text}"
+
+    try:
+        completion = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "system", "content": sys}, {"role": "user", "content": usr}],
+            temperature=0.7, max_tokens=300
+        )
+        return {"response": completion.choices[0].message.content}
+    except:
+        return {"response": "Error processing request."}
+
+# 3. Get Trial
+@app.post("/get-trial")
+def get_trial(request: Request):
+    client_ip = request.headers.get("x-forwarded-for") or request.client.host
+    
+    # Check IP Limit in Mongo
+    existing_trial = trials_col.find_one({"ip": client_ip})
+    if existing_trial:
+        last = datetime.datetime.fromisoformat(existing_trial["timestamp"])
+        if datetime.datetime.now() - last < datetime.timedelta(hours=24):
+            raise HTTPException(400, "Trial limit reached (1 per 24h).")
+
+    # Get Code from Mongo
+    code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
+    if not code_doc:
+        raise HTTPException(404, "No trial codes available.")
+    
+    # Update DB (Atomic operation safe)
+    codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
+    trials_col.update_one(
+        {"ip": client_ip}, 
+        {"$set": {"timestamp": datetime.datetime.now().isoformat()}}, 
+        upsert=True
+    )
+    
+    return {"code": code_doc["code"], "message": "Success"}
+
+# 4. Submit Order
+@app.post("/submit-order")
+def submit_order(order: OrderRequest):
+    order_id = f"ORD-{datetime.datetime.now().strftime('%H%M%S')}"
+    
+    new_order = {
+        "order_id": order_id,
+        "email": order.email,
+        "trans_id": order.transaction_id,
+        "plan": order.plan,
+        "status": "pending",
+        "assigned_code": None,
+        "created_at": datetime.datetime.now()
+    }
+    orders_col.insert_one(new_order)
+
+    msg_text = f"🚨 *NEW ORDER*\n📦 Plan: {order.plan}\n💰 TxID: `{order.transaction_id}`\n📧 Email: {order.email}\n🆔 ID: `{order_id}`"
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "✅ Approve", "callback_data": f"approve:{order_id}"},
+            {"text": "❌ Reject", "callback_data": f"reject:{order_id}"}
+        ]]
+    }
+    
+    # Send notification asynchronously
+    threading.Thread(target=send_telegram_msg, args=(msg_text, keyboard)).start()
+    
+    return {"status": "pending", "order_id": order_id, "message": "Verifying..."}
+
+# 5. Check Order
+@app.get("/check-order")
+def check_order(order_id: str):
+    order = orders_col.find_one({"order_id": order_id})
+    if not order: return {"status": "not_found"}
+    return {"status": order["status"], "code": order.get("assigned_code")}
+
+# 6. Telegram Webhook (The Control Center)
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    try:
+        data = await request.json()
+    except:
+        return {"status": "invalid_json"}
+    
+    if "callback_query" in data:
+        cb = data["callback_query"]
+        cb_id = cb["id"]
+        action_data = cb["data"]
+        chat_id = cb["message"]["chat"]["id"]
+        msg_id = cb["message"]["message_id"]
+        
+        # Stop loading spinner on Telegram
+        threading.Thread(target=requests.post, args=(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",), kwargs={"json": {"callback_query_id": cb_id}}).start()
+
+        try:
+            action, order_id = action_data.split(":")
+        except:
+            return {"status": "bad_data"}
+        
+        order = orders_col.find_one({"order_id": order_id})
+        
+        if not order:
+            send_telegram_msg(f"Order {order_id} not found in DB.")
+            return {}
+
+        # Map plan names to DB types
+        plan_map = {"1 Month": "1m", "3 Months": "3m", "6 Months": "6m", "12 Months": "12m", "Yearly": "12m"}
+        db_type = plan_map.get(order.get("plan"), "1m")
+
+        new_text = ""
+        if action == "approve":
+            code_doc = codes_col.find_one({"type": db_type, "is_sold": False})
+            
+            if code_doc:
+                code_val = code_doc["code"]
+                # Update Inventory
+                codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
+                # Update Order
+                orders_col.update_one({"order_id": order_id}, {"$set": {"status": "approved", "assigned_code": code_val}})
+                
+                new_text = f"✅ *APPROVED*\nID: {order_id}\nCode: `{code_val}`"
+            else:
+                new_text = f"⚠️ *NO STOCK* for {db_type}. Order ID: {order_id}\nPlease add codes and try again."
+                
+        elif action == "reject":
+            orders_col.update_one({"order_id": order_id}, {"$set": {"status": "rejected"}})
+            new_text = f"❌ *REJECTED*\nID: {order_id}"
+
+        # Update the Telegram message to remove buttons
+        edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+        payload = {"chat_id": chat_id, "message_id": msg_id, "text": new_text, "parse_mode": "Markdown"}
+        requests.post(edit_url, json=payload)
+
+    return {"status": "ok"}
+
+# --- ADMIN ENDPOINTS (MongoDB Version) ---
+
+@app.post("/admin/add-codes")
+def add_codes(req: CodeAddRequest):
+    if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Invalid Password")
+    
+    docs = [{"type": req.type, "code": c.strip(), "is_sold": False} for c in req.codes if c.strip()]
+    if docs:
+        codes_col.insert_many(docs)
+        
+    return {"message": f"Added {len(docs)} codes to {req.type}."}
+
+@app.get("/admin/stats")
+def get_stats(password: str):
+    if password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Unauthorized")
+    
+    pipeline = [
+        {"$match": {"is_sold": False}},
+        {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+    ]
+    results = list(codes_col.aggregate(pipeline))
+    # Convert list to dict for easier frontend consumption
+    stats = {r["_id"]: r["count"] for r in results}
+    return stats
+
+@app.get("/admin/get-prompt")
+def get_prompt(password: str):
+    if password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Unauthorized")
+    row = config_col.find_one({"key": "system_prompt"})
+    return {"prompt": row["value"] if row else ""}
+
+@app.post("/admin/update-prompt")
+def update_prompt(req: PromptUpdateRequest):
+    if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403, "Unauthorized")
+    config_col.update_one(
+        {"key": "system_prompt"}, 
+        {"$set": {"value": req.new_prompt}}, 
+        upsert=True
+    )
+    return {"message": "Prompt updated successfully"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
