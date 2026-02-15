@@ -5,6 +5,8 @@ import requests
 import threading
 import time
 import json
+from functools
+import lru_cache
 import security
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
@@ -172,6 +174,14 @@ class TrialRequest(BaseModel):
 class MarketingRequest(BaseModel): password: str; subject: str; content: str; limit: int
 class PromptUpdateRequest(BaseModel): password: str; new_prompt: str
 
+# --- CACHING FUNCTION ---
+@lru_cache(maxsize=1)
+def get_cached_system_prompt():
+    # هذه الدالة تقرأ من قاعدة البيانات مرة واحدة فقط وتحفظ النتيجة
+    config = config_col.find_one({"key": "system_prompt"})
+    return config["value"] if config else "You are a helpful assistant."
+
+
 # --- ENDPOINTS ---
 
 @app.get("/")
@@ -185,10 +195,17 @@ def chat_endpoint(req: ChatRequest):
     client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     if not client: return {"response": "AI Unavailable"}
     try:
-        prompt = config_col.find_one({"key": "system_prompt"})["value"]
-        completion = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role":"system","content":prompt},{"role":"user","content":req.message}])
+        # التغيير هنا: نستدعي الدالة المخبأة بدلاً من البحث في config_col
+        prompt = get_cached_system_prompt()
+        
+        completion = client.chat.completions.create(
+            model=GROQ_MODEL, 
+            messages=[{"role":"system","content":prompt},{"role":"user","content":req.message}]
+        )
         return {"response": completion.choices[0].message.content}
     except: return {"response": "System busy."}
+
+
 
 @app.post("/smart-ask")
 def smart_ask(req: SmartRequest):
@@ -338,8 +355,14 @@ def get_prompt(password: str):
 @app.post("/admin/update-prompt")
 def update_prompt(req: PromptUpdateRequest):
     if req.password.strip() != ADMIN_PASSWORD: raise HTTPException(403)
+    
+    # 1. تحديث قاعدة البيانات
     config_col.update_one({"key": "system_prompt"}, {"$set": {"value": req.new_prompt}}, upsert=True)
-    return {"message": "Updated"}
+    
+    # 2. مسح الكاش (هذا هو السطر الجديد الذي يجب إضافته)
+    get_cached_system_prompt.cache_clear()
+    
+    return {"message": "Updated & Cache Cleared"}
 
 @app.get("/security.js")
 def serve_security_js():
