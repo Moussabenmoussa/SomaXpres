@@ -81,8 +81,8 @@ def get_email_template(type, data):
     if type == 'trial':
         body = f"""
         <div style="padding:30px; background-color:#ffffff; font-family:Arial, sans-serif; color:#334155;">
-            <h2 style="color:#0f172a;">Your 24H Free Trial is Ready! 🚀</h2>
-            <p>Thank you for trying DARPRO4K. Below is your activation code.</p>
+            <h2 style="color:#0f172a;">Account Access Info 🚀</h2>
+            <p>Thank you for Access DARPRO4K. Below is your activation code.</p>
             <div style="background-color:#eff6ff; border:1px solid #bfdbfe; padding:20px; text-align:center; margin:20px 0; border-radius:8px;">
                 <span style="font-size:14px; color:#64748b; display:block; margin-bottom:5px;">ACTIVATION CODE</span>
                 <span style="font-size:24px; font-weight:bold; color:#2563eb; font-family:monospace; letter-spacing:2px;">{data['code']}</span>
@@ -106,11 +106,12 @@ def get_email_template(type, data):
             </div>
             <h3>Installation Guide:</h3>
             <ol style="line-height:1.6;">
-                <li>Download <strong>DAR Player</strong> from Google Play.</li>
+                <li>Download <a href="https://play.google.com/store/apps/details?id=com.mbm_soft.darplayer" style="color:#2563eb; text-decoration:none;"><strong>DAR Player</strong></a> from Google Play.</li>
                 <li>Launch the app.</li>
                 <li>Paste your Premium Code.</li>
             </ol>
         </div>
+
         """
     elif type == 'marketing':
         body = f"""
