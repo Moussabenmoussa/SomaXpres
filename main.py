@@ -234,11 +234,16 @@ def get_trial(req: TrialRequest, request: Request, background_tasks: BackgroundT
     forwarded = request.headers.get("x-forwarded-for")
     client_ip = forwarded.split(",")[0].strip() if forwarded else request.client.host
     
-    security.verify_trial_eligibility(req.email, client_ip, req.fingerprint, trials_col)
+    # التقاط أخطاء الحماية وإرجاعها كـ JSON متوافق مع Blogger بدلاً من خطأ 400
+    try:
+        security.verify_trial_eligibility(req.email, client_ip, req.fingerprint, trials_col)
+    except HTTPException as e:
+        return {"status": "error", "message": e.detail}
 
     code_doc = codes_col.find_one({"type": "trial", "is_sold": False})
     if not code_doc:
-        raise HTTPException(status_code=404, detail="No trial codes available.")
+        # إرجاع استجابة JSON بدلاً من خطأ 404
+        return {"status": "error", "message": "No trial codes available at the moment."}
 
     codes_col.update_one({"_id": code_doc["_id"]}, {"$set": {"is_sold": True}})
     
@@ -259,10 +264,20 @@ def get_trial(req: TrialRequest, request: Request, background_tasks: BackgroundT
     email_html = get_email_template("trial", {"code": code_doc["code"]})
     background_tasks.add_task(send_email_brevo, req.email, "Your Free Trial Code - DARPRO4K", email_html)
 
-    return {"message": "Code sent to email"}
+    return {"status": "success", "message": "Code sent to email"}
 
 @app.post("/submit-order")
 def submit_order(order: OrderRequest, background_tasks: BackgroundTasks):
+    # التحقق الاستباقي من المخزون قبل أي إجراء
+    plan_map = {"1 Month":"1m", "3 Months":"3m", "6 Months":"6m", "12 Months":"12m", "Yearly":"12m"}
+    db_type = plan_map.get(order.plan, "1m")
+    
+    available_code = codes_col.find_one({"type": db_type, "is_sold": False})
+    if not available_code:
+        # رفض الطلب فوراً وإبلاغ الواجهة الأمامية بنفاد المخزون
+        return {"status": "error", "message": f"No stock available for {order.plan}."}
+
+    # إذا كان المخزون متوفراً، نستمر في إنشاء الطلب
     order_id = f"ORD-{datetime.datetime.now().strftime('%H%M%S')}"
     orders_col.insert_one({"order_id": order_id, "email": order.email, "trans_id": order.transaction_id, "plan": order.plan, "status": "pending", "created_at": datetime.datetime.now()})
     users_col.update_one({"email": order.email}, {"$set": {"source": "order"}}, upsert=True)
@@ -339,7 +354,6 @@ def broadcast_email(req: MarketingRequest, background_tasks: BackgroundTasks):
                 success = await send_email_brevo(user["email"], req.subject, email_html)
                 if success:
                     users_col.update_one({"_id": user["_id"]}, {"$set": {"last_marketing_date": datetime.datetime.now()}})
-                # استخدام النوم غير المتزامن لتفادي تجميد الخادم أثناء الدوران
                 await asyncio.sleep(0.2)
                 
     background_tasks.add_task(task)
