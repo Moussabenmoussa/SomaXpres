@@ -1,8 +1,9 @@
 fastapi
 uvicorn
+gunicorn
 groq
 pydantic
-requests
+httpx
 pymongo
 dnspython
 python-multipart
